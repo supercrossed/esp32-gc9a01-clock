@@ -1,0 +1,20 @@
+# PlatformIO build output and downloaded libraries
+.pio/
+
+# editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# python
+__pycache__/
+*.pyc
+
+# your WiFi credentials and location - copy config.example.h to config.h
+src/config.h
+
+# built clock images embed your WiFi credentials - never commit them.
+# (the displaytest images have no WiFi in them and are fine)
+firmware/*/clock.bin
