@@ -66,22 +66,26 @@ pio run -e c3_clock -t upload             # ESP32-C3
 
 `config.h` is gitignored so your password stays on your machine.
 
-If you don't want to build, there are prebuilt images in `firmware/`. Each
-one is the bootloader, partition table and app merged into a single file that
-flashes at offset 0:
+Every build also drops a merged image (bootloader, partition table and app in
+one file, flashed at offset 0) into `firmware/<board>/`, and `flash.py` will
+put it on a board and read it back to make sure it actually landed:
 
 ```
 python scripts/flash.py s3 clock
 python scripts/flash.py c3 clock COM8
 ```
 
-`flash.py` works out which chip is on which port (both boards show up with
-the same USB VID/PID, so port order tells you nothing) and reads the flash
-back afterwards to make sure it actually landed. The prebuilt images have my
-WiFi details baked in, obviously, so you'll want to build your own.
+It works out which chip is on which port, since both boards show up with the
+same USB VID/PID and port order tells you nothing.
 
-Every `pio run` also refreshes `firmware/<board>/` automatically; there's a
-post-build script that does the merge.
+The clock images aren't in the repo because they have your WiFi password
+compiled into them, so they're gitignored. The only prebuilt images checked
+in are the `displaytest` ones, which have no WiFi in them at all. They're
+handy for checking the wiring before you've set anything up:
+
+```
+python scripts/flash.py c3 displaytest
+```
 
 ### If the screen stays black
 
