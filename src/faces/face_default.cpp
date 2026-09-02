@@ -172,6 +172,17 @@ static void render(GFX &g, const struct tm &t, float subSec)
 static void faceRender(TFT_eSprite &g, const struct tm &t, float sub) { render(g, t, sub); }
 static void faceRender(TFT_eSPI    &g, const struct tm &t, float sub) { render(g, t, sub); }
 
+// What moves between frames: the second hand (old and new), and the digital
+// time under the hub once a second. Lets the AMOLED redraw just those.
+static int faceDirty(const struct tm &t, float sub, const struct tm &pt, float psub,
+                     DirtyRect *out, int max)
+{
+    int n = handBoxes(CX, CY, 26, 96, secAngle(pt, psub), 8, 6, out, max);
+    n += handBoxes(CX, CY, 26, 96, secAngle(t, sub), 8, 6, out + n, max - n);
+    if (t.tm_sec != pt.tm_sec && n < max) out[n++] = { CX - 40, CY + 50 - 9, 80, 18 };
+    return n;
+}
+
 } // namespace face_default
 
 // Registration: the one symbol this file exposes.
@@ -182,4 +193,5 @@ const FaceVTable FACE_DEFAULT = {
     face_default::faceSmooth,
     (void(*)(TFT_eSprite&, const struct tm&, float))face_default::faceRender,
     (void(*)(TFT_eSPI&,    const struct tm&, float))face_default::faceRender,
+    face_default::faceDirty,
 };

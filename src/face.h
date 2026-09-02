@@ -11,14 +11,20 @@
 // ---------------------------------------------------------------------------
 #pragma once
 #include <Arduino.h>
-#include <TFT_eSPI.h>
 #include <time.h>
 #include <math.h>
 
-// ---- shared drawing surfaces (owned by main.cpp) --------------------------
-extern TFT_eSPI    tft;
-extern TFT_eSprite fb;
-extern bool        useSprite;
+// The faces draw through TFT_eSPI's API. On the GC9A01 boards that is the
+// real library; on the AMOLED board it is our own canvas wearing the same
+// names (see c6/canvas.h), so the face sources are identical for all three.
+#ifdef AMOLED_C6
+#include "c6/tft_shim.h"
+#else
+#include <TFT_eSPI.h>
+#endif
+
+// ---- shared drawing surfaces (owned by the screen back end) ---------------
+extern bool useSprite;      // false = drawing straight at the panel (slow path)
 
 // ---- shared live state (owned by main.cpp) -------------------------------
 extern volatile bool wxValid;    // a weather fetch has succeeded at least once
@@ -39,6 +45,16 @@ inline const char *wxUnit() { return wxUseF ? "F" : "C"; }
 // Every face lives in its own namespace and exposes one FaceVTable, so all of
 // them can be linked into a single binary and selected at runtime. Without the
 // namespaces the six copies of faceInit/faceRender/... would collide.
+// A box in the faces' 240x240 space.
+struct DirtyRect { int16_t x, y, w, h; };
+
+// Optional, for faces that animate between seconds: fill `out` with the boxes
+// that differ between the previous frame (pt, psub) and this one (t, sub).
+// The AMOLED board uses this to redraw a sweeping hand at 8 Hz without
+// repainting the dial. Return 0 to ask for a full repaint instead.
+typedef int (*DirtyFn)(const struct tm &t, float sub,
+                       const struct tm &pt, float psub, DirtyRect *out, int max);
+
 struct FaceVTable {
     const char *name;
     void      (*init)();
@@ -46,7 +62,34 @@ struct FaceVTable {
     bool      (*smooth)();                 // true = animates continuously
     void      (*renderSprite)(TFT_eSprite &, const struct tm &, float);
     void      (*renderDirect)(TFT_eSPI    &, const struct tm &, float);
+    DirtyFn     dirty;                     // may be null (trailing member: old
+                                           // six-entry initialisers still work)
 };
+
+// Seconds hand angle in radians, 0 at 12 o'clock.
+inline float secAngle(const struct tm &t, float sub)
+{
+    return (t.tm_sec + sub) * 6.0f * DEG_TO_RAD;
+}
+
+// Boxes along a hand that reaches from -back (the counterweight) to +len at
+// angle `ang`, in `segs` pieces so a diagonal hand is not one big square.
+// `pad` covers the hand's width, its anti-aliasing and any counterweight.
+inline int handBoxes(int cx, int cy, float back, float len, float ang,
+                     int pad, int segs, DirtyRect *out, int max)
+{
+    float s = sinf(ang), c = cosf(ang);
+    int n = 0;
+    for (int i = 0; i < segs && n < max; i++) {
+        float r0 = -back + (len + back) * i / segs;
+        float r1 = -back + (len + back) * (i + 1) / segs;
+        float x0 = cx + r0 * s, y0 = cy - r0 * c, x1 = cx + r1 * s, y1 = cy - r1 * c;
+        int bx = (int)floorf(fminf(x0, x1)) - pad, by = (int)floorf(fminf(y0, y1)) - pad;
+        int ex = (int)ceilf(fmaxf(x0, x1)) + pad,  ey = (int)ceilf(fmaxf(y0, y1)) + pad;
+        out[n++] = { (int16_t)bx, (int16_t)by, (int16_t)(ex - bx), (int16_t)(ey - by) };
+    }
+    return n;
+}
 
 // One per faces/*.cpp.
 extern const FaceVTable FACE_DEFAULT, FACE_CASIO, FACE_MOSAIC,

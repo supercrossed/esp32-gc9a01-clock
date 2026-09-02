@@ -14,7 +14,8 @@ import json
 import subprocess
 import datetime
 
-BOARDS = {"s3": "esp32s3", "c3": "esp32c3"}
+BOARDS = {"s3": "esp32s3", "c3": "esp32c3", "c6": "esp32c6"}
+FLASH_SIZE = {"s3": "4MB", "c3": "4MB", "c6": "16MB"}
 
 
 def split_env(pioenv):
@@ -31,12 +32,26 @@ def after_build(source, target, env):
     chip = BOARDS[board]
 
     build_dir = env.subst("$BUILD_DIR")
-    proj_dir = env.subst("$PROJECT_DIR")
-    out_dir = os.path.join(proj_dir, "firmware", board)
+    # The repo root: the C6 builds from its own project in c6/ and its images
+    # belong in the same firmware/ tree as the others. (__file__ is not set
+    # when PlatformIO runs a hook, so walk up from the project dir instead.)
+    root = env.subst("$PROJECT_DIR")
+    if not os.path.isdir(os.path.join(root, "scripts")) and \
+       os.path.isdir(os.path.join(root, "..", "scripts")):
+        root = os.path.normpath(os.path.join(root, ".."))
+    out_dir = os.path.join(root, "firmware", board)
     os.makedirs(out_dir, exist_ok=True)
 
     platform = env.PioPlatform()
-    esptool = os.path.join(platform.get_package_dir("tool-esptoolpy"), "esptool.py")
+    # The official platform ships esptool as a bare script; pioarduino (C6)
+    # ships it as a pip package. Run whichever this platform installed.
+    pkg = platform.get_package_dir("tool-esptoolpy") or ""
+    if os.path.isfile(os.path.join(pkg, "esptool.py")):
+        esptool_cmd, esptool_env = [sys.executable, os.path.join(pkg, "esptool.py")], None
+    else:
+        esptool_env = dict(os.environ)
+        esptool_env["PYTHONPATH"] = pkg + os.pathsep + esptool_env.get("PYTHONPATH", "")
+        esptool_cmd = [sys.executable, "-m", "esptool"]
     boot_app0 = os.path.join(platform.get_package_dir("framework-arduinoespressif32"),
                              "tools", "partitions", "boot_app0.bin")
 
@@ -53,13 +68,13 @@ def after_build(source, target, env):
             return
 
     out = os.path.join(out_dir, face + ".bin")
-    cmd = [sys.executable, esptool, "--chip", chip, "merge_bin", "-o", out,
-           "--flash_mode", "dio", "--flash_freq", "80m", "--flash_size", "4MB"]
+    cmd = esptool_cmd + ["--chip", chip, "merge_bin", "-o", out,
+                         "--flash_mode", "dio", "--flash_freq", "80m", "--flash_size", FLASH_SIZE[board]]
     for addr, path in parts:
         cmd += [addr, path]
 
     try:
-        subprocess.run(cmd, check=True,
+        subprocess.run(cmd, check=True, env=esptool_env,
                        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
         print("export_firmware: merge_bin failed (%s)" % e)

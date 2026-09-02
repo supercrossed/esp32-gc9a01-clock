@@ -172,6 +172,14 @@ static void render(GFX &g, const struct tm &t, float subSec)
 static void faceRender(TFT_eSprite &g, const struct tm &t, float sub) { render(g, t, sub); }
 static void faceRender(TFT_eSPI    &g, const struct tm &t, float sub) { render(g, t, sub); }
 
+// Between seconds only the small-seconds sub-dial changes.
+static int faceDirty(const struct tm &, float, const struct tm &, float, DirtyRect *out, int max)
+{
+    if (max < 1) return 0;
+    out[0] = { SUB_CX - SUB_R - 3, SUB_CY - SUB_R - 3, 2 * SUB_R + 6, 2 * SUB_R + 6 };
+    return 1;
+}
+
 } // namespace face_classic
 
 const FaceVTable FACE_CLASSIC = {
@@ -181,4 +189,5 @@ const FaceVTable FACE_CLASSIC = {
     face_classic::faceSmooth,
     (void(*)(TFT_eSprite&, const struct tm&, float))face_classic::faceRender,
     (void(*)(TFT_eSPI&,    const struct tm&, float))face_classic::faceRender,
+    face_classic::faceDirty,
 };

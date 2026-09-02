@@ -33,6 +33,50 @@ them as a close preview rather than a screenshot.
   BLK pin, wire it to 3V3 or add `-D TFT_BL=<gpio>` to `platformio.ini`.
 - A USB-C cable. That's it, the board powers the display.
 
+## Waveshare ESP32-C6 1.43" AMOLED
+
+The same firmware also builds for the
+[Waveshare ESP32-C6-Touch-AMOLED-1.43](https://docs.waveshare.com/ESP32-C6-Touch-AMOLED-1.43),
+a 466x466 AMOLED with capacitive touch in a watch-sized case. Nothing to
+wire; the panel and touch are on the board.
+
+```
+pio run -d c6 -t upload
+python scripts/flash.py c6 clock
+```
+
+It's a separate PlatformIO project in `c6/`, sharing the same `src/`. The
+ESP32-C6 needs Arduino core 3, which the official PlatformIO platform never
+got, so that project uses the
+[pioarduino](https://github.com/pioarduino/platform-espressif32) fork with
+its own package store; the first build downloads a second toolchain. Keeping
+it apart matters because both platforms install a package by the same name
+and would overwrite each other in one project. `python scripts/build_all.py`
+builds every board. On Windows, build the C6 from PowerShell or CMD rather
+than Git Bash: Espressif's toolchain installer refuses to run under MSYS and
+the compiler never lands on the PATH (the script handles that itself).
+
+What's different on it:
+
+- **Touch.** Swipe right-to-left for the next face, left-to-right for the
+  previous one. Hold a finger down for a second to open the WiFi setup
+  hotspot. BOOT-at-power-on still works too.
+- **Resolution.** The faces are drawn for 240 pixels; here every coordinate
+  is scaled to the panel as it's drawn, so hands, rings and ticks come out
+  crisp at 466 rather than upscaled. Text is the same bitmap fonts doubled,
+  which at this panel's density is the same physical size as on the 1.28".
+- **Memory.** A full 466x466 frame is 434 KB and the chip hasn't got it, so
+  the screen is rendered in bands. The sweeping-seconds faces redraw only
+  small boxes around the hand, at 8 Hz like a 28,800 bph automatic, plus one
+  band of the dial per frame in rotation so nothing goes stale.
+- **AMOLED.** Pure blacks are properly off. Brightness drops after sunset.
+  Static faces for three hours at a time are within what these panels
+  tolerate, but if you're leaving it on a desk for months, shorter rotation
+  is kinder.
+
+`c6_displaytest` is the bring-up check: colour bands, all three fonts, and
+a dot that follows your finger.
+
 ## Wiring
 
 | display | ESP32-S3 | ESP32-C3 |
@@ -218,7 +262,10 @@ On the C3 there's only one core, so there's a short hitch every ten minutes.
 
 ```
 src/
-  main.cpp             hardware, WiFi, NTP, weather, face rotation
+  main.cpp             WiFi, NTP, weather, face rotation, touch
+  screen.h             the display back end interface
+  tft/screen_tft.cpp   GC9A01 boards: TFT_eSPI full-frame sprite
+  c6/                  AMOLED board: canvas rasteriser, panel + touch drivers
   portal.cpp           the Clock-Setup hotspot and its page
   settings.cpp         what setup saved, in NVS
   tz.h                 IANA zone name -> POSIX rule
@@ -226,7 +273,8 @@ src/
   config.example.h     optional compiled-in defaults
   faces/               one file per face
   tools/display_test.cpp
-firmware/s3, firmware/c3   prebuilt images
+c6/platformio.ini    the AMOLED board's own project (shares src/)
+firmware/<board>/    prebuilt images
 scripts/
   flash.py             flash a prebuilt image and verify it
   export_firmware.py   post-build hook that produces the merged images

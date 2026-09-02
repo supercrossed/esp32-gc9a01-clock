@@ -1,26 +1,27 @@
 // ---------------------------------------------------------------------------
-//  NTP clock + weather  -  ESP32-S3 / ESP32-C3 Super Mini + GC9A01 round LCD
+//  NTP clock + weather  -  ESP32-S3 / ESP32-C3 Super Mini + GC9A01 round LCD,
+//                          and the Waveshare ESP32-C6 1.43" AMOLED
 //
-//  This file owns the hardware, WiFi, NTP, the weather fetch and the face
-//  rotation. The visual design lives in faces/. Settings (WiFi, location,
+//  This file owns WiFi, NTP, the weather fetch, the face rotation and touch.
+//  The display itself is behind screen.h, with one back end per board
+//  family. The visual design lives in faces/. Settings (WiFi, location,
 //  units) live in NVS and are entered through the captive setup hotspot in
 //  portal.cpp, so nothing has to be compiled in.
-//
-//  Rendering goes into an off-screen sprite and is blitted once per frame so
-//  nothing flickers, falling back to direct-to-panel drawing if the 115 KB
-//  sprite cannot be allocated.
 // ---------------------------------------------------------------------------
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <TFT_eSPI.h>
 #include <time.h>
 #include <sys/time.h>
 #include "face.h"
+#include "screen.h"
 #include "settings.h"
 #include "portal.h"
 #include "tz.h"
+#ifdef AMOLED_C6
+#include "c6/touch.h"
+#endif
 
 // ----------------------------- compiled-in defaults ------------------------
 // config.h is optional. If present, its values seed a chip that has nothing
@@ -54,7 +55,7 @@ static const uint32_t WX_RETRY_MS  = 30UL * 1000UL;         // sooner after a fa
 static const uint32_t PORTAL_AFTER_DOWN_MS = 60UL * 1000UL;
 
 // BOOT button: hold at power-on to wipe the settings and start setup over.
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 #define BOOT_BTN 9
 #else
 #define BOOT_BTN 0
@@ -112,13 +113,9 @@ static int nextFaceIdx(int cur)
     if (!ROTATE_RANDOM)  return (cur + 1) % ROTATION_N;
     return (cur + 1 + (int)(esp_random() % (ROTATION_N - 1))) % ROTATION_N;
 }
-// File scope rather than function-local: the rotation resets it to force an
-// immediate repaint when the face changes.
+// File scope rather than function-local: a face switch resets it to force
+// an immediate repaint.
 static int      lastSec      = -1;
-
-TFT_eSPI    tft = TFT_eSPI();
-TFT_eSprite fb  = TFT_eSprite(&tft);   // full-screen frame buffer
-bool        useSprite = false;
 
 bool     timeValid = false;
 uint16_t statusCol = 0xFD20;           // amber until WiFi + NTP are both good
@@ -201,16 +198,16 @@ static bool resolveLocation()
     return ok;
 }
 
-// Runs on core 0 alongside WiFi (on the S3; the C3 has one core), so the
-// fetch never stalls the render loop.
+// Runs on core 0 alongside WiFi (on the S3; the C3 and C6 have one core), so
+// the fetch never stalls the render loop.
 //
 // Plain HTTP on purpose. Open-Meteo serves this over http with no redirect,
 // and a TLS handshake wants roughly 40 KB of heap plus large contiguous
-// mbedTLS buffers - on top of the 115 KB sprite and the WiFi stack, that
+// mbedTLS buffers - on top of the frame buffers and the WiFi stack, that
 // allocation is what was failing.
 //
 // wxErr records which stage failed so the face can show it; there is no
-// usable serial console on this board.
+// usable serial console on these boards.
 static void weatherTask(void *)
 {
     for (;;) {
@@ -293,7 +290,7 @@ static void weatherTask(void *)
     }
 }
 
-// Park the onboard LED so it does not distract. The two boards differ:
+// Park the onboard LED so it does not distract. The boards differ:
 //
 //   S3 Super Mini - a WS2812 on GP48, sharing the pin with a plain blue LED.
 //     A floating data line makes it latch noise and flash, so clock it an
@@ -301,9 +298,13 @@ static void weatherTask(void *)
 //
 //   C3 Super Mini - a plain LED on GP8, wired active-low, so park it high.
 //     GP48 does not exist on the C3, whose GPIOs stop at 21.
+//
+//   Waveshare C6 - no user LED on a GPIO.
 static void parkOnboardLed()
 {
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C6
+    // nothing to park
+#elif CONFIG_IDF_TARGET_ESP32C3
     pinMode(8, OUTPUT);
     digitalWrite(8, HIGH);
 #else
@@ -313,32 +314,46 @@ static void parkOnboardLed()
 #endif
 }
 
-// Centred boot/status message, always straight to the panel.
-static void banner(const char *line1, const char *line2, uint16_t color)
+// Centred boot/status message. Static screens go through screenPaint() so
+// the band renderer on the AMOLED can draw them piecewise.
+static const char *bannerL1, *bannerL2;
+static uint16_t    bannerCol;
+static void paintBanner(GfxDirect &g)
 {
     uint16_t bg = activeFace->background();
-    tft.fillScreen(bg);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(color, bg);
-    tft.drawString(line1, 120, 108, 4);
-    if (line2) {
-        tft.setTextColor(0x7BEF, bg);
-        tft.drawString(line2, 120, 138, 2);
+    g.fillScreen(bg);
+    g.setTextDatum(MC_DATUM);
+    g.setTextColor(bannerCol, bg);
+    g.drawString(bannerL1, 120, 108, 4);
+    if (bannerL2) {
+        g.setTextColor(0x7BEF, bg);
+        g.drawString(bannerL2, 120, 138, 2);
     }
+}
+static void banner(const char *line1, const char *line2, uint16_t color)
+{
+    bannerL1 = line1; bannerL2 = line2; bannerCol = color;
+    screenPaint(paintBanner);
 }
 
 // What to do while the hotspot is up: the network to join, the address to
 // open, and how it is going.
+static const char *setupStatus = "";
+static void paintSetup(GfxDirect &g)
+{
+    g.fillScreen(0x0000);
+    g.setTextDatum(MC_DATUM);
+    g.setTextColor(0xFD20, 0x0000); g.drawString("WiFi setup",       120,  50, 4);
+    g.setTextColor(0x9CD3, 0x0000); g.drawString("join the network", 120,  82, 2);
+    g.setTextColor(0xFFFF, 0x0000); g.drawString(portal::AP_SSID,    120, 106, 4);
+    g.setTextColor(0x9CD3, 0x0000); g.drawString("then open",        120, 134, 2);
+    g.setTextColor(0xFFFF, 0x0000); g.drawString("192.168.4.1",      120, 158, 4);
+    g.setTextColor(0x7BEF, 0x0000); g.drawString(setupStatus,        120, 196, 2);
+}
 static void drawSetupScreen(const char *status)
 {
-    tft.fillScreen(0x0000);
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(0xFD20, 0x0000); tft.drawString("WiFi setup",     120,  50, 4);
-    tft.setTextColor(0x9CD3, 0x0000); tft.drawString("join the network", 120, 82, 2);
-    tft.setTextColor(0xFFFF, 0x0000); tft.drawString(portal::AP_SSID,  120, 106, 4);
-    tft.setTextColor(0x9CD3, 0x0000); tft.drawString("then open",       120, 134, 2);
-    tft.setTextColor(0xFFFF, 0x0000); tft.drawString("192.168.4.1",     120, 158, 4);
-    tft.setTextColor(0x7BEF, 0x0000); tft.drawString(status,            120, 196, 2);
+    setupStatus = status;
+    screenPaint(paintSetup);
 }
 
 static const char *portalStatusText(portal::State s)
@@ -399,16 +414,16 @@ static void seedDefaults()
     }
 }
 
-// Small pill along the bottom of whatever face is showing, while the hotspot
-// is open because the network went away.
-template <typename GFX>
-static void drawPortalHint(GFX &g)
+// Switch to a face: clear the panel (faces do not all paint every pixel, so
+// the old one would show through in the margins) and force a repaint.
+static void showFace(int idx)
 {
-    g.fillRoundRect(44, 199, 152, 24, 12, 0x0000);
-    g.drawRoundRect(44, 199, 152, 24, 12, 0xFD20);
-    g.setTextDatum(MC_DATUM);
-    g.setTextColor(0xFD20, 0x0000);
-    g.drawString("WiFi: Clock-Setup", 120, 211, 2);
+    faceIdx    = idx;
+    activeFace = ROTATION[faceIdx];
+    faceSince  = millis();
+    lastSec    = -1;
+    screenInvalidate();
+    screenClear(activeFace->background());
 }
 
 void setup()
@@ -422,24 +437,18 @@ void setup()
     faceIdx    = firstFaceIdx();
     activeFace = ROTATION[faceIdx];
 
-    tft.init();
-    tft.setRotation(0);
-    tft.fillScreen(activeFace->background());
+    // Frame buffers are claimed in here, before WiFi comes up, while the heap
+    // is still unfragmented.
+    screenInit();
+    screenClear(activeFace->background());
+#ifdef AMOLED_C6
+    touch::begin();
+#endif
 
     // Initialise every face, not just the first: rotation can reach any of
     // them, and their init work (geometry tables, tile seeds) is one-off.
     for (int i = 0; i < ROTATION_N; i++) ROTATION[i]->init();
     faceSince = millis();
-
-    // 240*240*2 = 115200 bytes, claimed before WiFi comes up so the heap is
-    // still unfragmented. If it fails we still run, just slower.
-    fb.setColorDepth(16);
-    if (fb.createSprite(240, 240) != nullptr) {
-        useSprite = true;
-        Serial.println("[disp] sprite frame buffer allocated");
-    } else {
-        Serial.println("[disp] sprite alloc FAILED - drawing direct");
-    }
 
     settingsLoad();
     bool startOver = bootHeld();
@@ -477,8 +486,12 @@ void setup()
     while (time(nullptr) < 1700000000 && millis() - t0 < 20000) delay(200);
     timeValid = time(nullptr) > 1700000000;
 
-    // Weather runs on core 0 with WiFi; the render loop owns core 1.
+    // Weather runs on core 0 with WiFi; the render loop owns core 1 on the
+    // S3. On the single-core chips it is just another task.
     xTaskCreatePinnedToCore(weatherTask, "weather", 10240, nullptr, 1, nullptr, 0);
+
+    screenInvalidate();
+    screenClear(activeFace->background());
 }
 
 void loop()
@@ -492,35 +505,35 @@ void loop()
 
     portal::handle();
 
-    // Rotate on schedule. Clearing the panel on the way out matters: faces do
-    // not all paint every pixel, so without it the previous face can show
-    // through in the margins.
-    if (ROTATE_MS && millis() - faceSince >= ROTATE_MS) {
-        faceIdx    = nextFaceIdx(faceIdx);
-        activeFace = ROTATION[faceIdx];
-        faceSince  = millis();
-        lastSec    = -1;                       // force an immediate repaint
-        if (useSprite) fb.fillSprite(activeFace->background());
-        tft.fillScreen(activeFace->background());
+#ifdef AMOLED_C6
+    // Touch: swipe through the faces in list order, hold to open setup.
+    switch (touch::poll()) {
+        case touch::SWIPE_LEFT:  showFace((faceIdx + 1) % ROTATION_N);              break;
+        case touch::SWIPE_RIGHT: showFace((faceIdx + ROTATION_N - 1) % ROTATION_N); break;
+        case touch::LONG_PRESS:  if (!portal::running()) portal::start();           break;
+        default: break;
     }
+#endif
+
+    // Rotate on schedule.
+    if (ROTATE_MS && millis() - faceSince >= ROTATE_MS) showFace(nextFaceIdx(faceIdx));
 
     // A segmented face only changes when the second does, and its angled
     // cells cost real time to rasterise - so redraw it at 1 Hz rather than
-    // flat out. An animated face redraws every pass for a smooth sweep.
+    // flat out. An animated face redraws for a smooth sweep: flat out where
+    // there is a full frame buffer, at the back end's chosen rate where the
+    // sweep is done with dirty boxes.
     const bool smooth = activeFace->smooth();
-    bool due = smooth || t.tm_sec != lastSec;
+    const int  hz     = screenSweepHz();
+    static uint32_t lastFrameMs = 0;
+    bool due = smooth ? (hz == 0 || millis() - lastFrameMs >= (uint32_t)(1000 / hz))
+                      : t.tm_sec != lastSec;
 
     if (due) {
-        lastSec = t.tm_sec;
+        lastSec     = t.tm_sec;
+        lastFrameMs = millis();
         float sub = smooth ? tv.tv_usec / 1000000.0f : 0.0f;
-        if (useSprite) {
-            activeFace->renderSprite(fb, t, sub);
-            if (portal::running()) drawPortalHint(fb);
-            fb.pushSprite(0, 0);
-        } else {
-            activeFace->renderDirect(tft, t, sub);
-            if (portal::running()) drawPortalHint(tft);
-        }
+        screenRenderFace(activeFace, t, sub, portal::running());
     }
 
     // Re-evaluate link/sync state once a second for the status indicator.
@@ -529,6 +542,11 @@ void loop()
         bool up = WiFi.status() == WL_CONNECTED;
         if (!timeValid && time(nullptr) > 1700000000) timeValid = true;
         statusCol = (timeValid && up) ? 0x2E68 : 0xFD20;
+
+        // Self-lit panels: ease off after dark. No-op where there is a backlight.
+        static int lastNight = -1;
+        int night = isNightNow(t) ? 1 : 0;
+        if (night != lastNight) { lastNight = night; screenSetBrightness(night ? 110 : 255); }
 
         // Network gone for a while: open the hotspot so new details can be
         // entered, but keep showing the time. Close it again once something
@@ -552,6 +570,6 @@ void loop()
         }
     }
 
-    // Frame rate is bounded by the SPI transfer, not by this delay.
+    // Frame rate is bounded by the panel transfer, not by this delay.
     delay(5);
 }

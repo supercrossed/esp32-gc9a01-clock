@@ -206,6 +206,15 @@ static void render(GFX &g, const struct tm &t, float subSec)
 static void faceRender(TFT_eSprite &g, const struct tm &t, float sub) { render(g, t, sub); }
 static void faceRender(TFT_eSPI    &g, const struct tm &t, float sub) { render(g, t, sub); }
 
+// The second hand, old and new position, is all that moves between frames.
+static int faceDirty(const struct tm &t, float sub, const struct tm &pt, float psub,
+                     DirtyRect *out, int max)
+{
+    int n = handBoxes(CX, CY, 22, 100, secAngle(pt, psub), 7, 6, out, max);
+    n += handBoxes(CX, CY, 22, 100, secAngle(t, sub), 7, 6, out + n, max - n);
+    return n;
+}
+
 } // namespace face_modern
 
 const FaceVTable FACE_MODERN = {
@@ -215,4 +224,5 @@ const FaceVTable FACE_MODERN = {
     face_modern::faceSmooth,
     (void(*)(TFT_eSprite&, const struct tm&, float))face_modern::faceRender,
     (void(*)(TFT_eSPI&,    const struct tm&, float))face_modern::faceRender,
+    face_modern::faceDirty,
 };
