@@ -42,7 +42,7 @@ static const FaceVTable *const ROTATION[] = {
     // retro for three hours.
     &FACE_RETRO,
 #else
-    &FACE_WORD, &FACE_RETRO, &FACE_DOTMATRIX,
+    &FACE_WORD, &FACE_RETRO, &FACE_DOTMATRIX, &FACE_PULSAR,
     &FACE_CASIO, &FACE_MOSAIC, &FACE_DEFAULT,
 #endif
 };

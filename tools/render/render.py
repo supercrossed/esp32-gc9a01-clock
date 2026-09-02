@@ -253,6 +253,49 @@ def face_word(c, night=False):
 
 
 # --------------------------------------------------------------------------
+def face_pulsar(c):
+    K, _ = consts("pulsar")
+    P = K["P"]
+    DIG_W, DIG_H = 4 * P, 6 * P
+    X0, GAP, COLON_W = K["X0"], K["GAP"], K["COLON_W"]
+    X1 = X0 + DIG_W + GAP
+    XC = X1 + DIG_W + COLON_W // 2
+    X2 = X1 + DIG_W + COLON_W
+    X3 = X2 + DIG_W + GAP
+    Y0 = 120 - DIG_H // 2
+    SEG = {0x01: [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)],
+           0x40: [(0, 3), (1, 3), (2, 3), (3, 3), (4, 3)],
+           0x08: [(0, 6), (1, 6), (2, 6), (3, 6), (4, 6)],
+           0x20: [(0, 0), (0, 1), (0, 2), (0, 3)],
+           0x02: [(4, 0), (4, 1), (4, 2), (4, 3)],
+           0x10: [(0, 3), (0, 4), (0, 5), (0, 6)],
+           0x04: [(4, 3), (4, 4), (4, 5), (4, 6)]}
+    SEG_MAP = [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F]
+    CORE = [K["C_CORE0"], K["C_CORE1"], K["C_CORE2"]]
+    leds = []
+    for d, x0 in ((HH // 10 if HH >= 10 else -1, X0), (HH % 10, X1),
+                  (MM // 10, X2), (MM % 10, X3)):
+        if d < 0:
+            continue
+        on = set()
+        for bit, cells in SEG.items():
+            if SEG_MAP[d] & bit:
+                on.update(cells)
+        for r in range(7):
+            for cc in range(5):
+                if (cc, r) in on:
+                    leds.append((x0 + cc * P, Y0 + r * P, (cc * 7 + r * 13 + x0) % 3))
+    if SS & 1:
+        leds += [(XC, Y0 + 2 * P, 0), (XC, Y0 + 4 * P, 0)]
+    c.fillScreen(K["C_BG"])
+    for x, y, _ in leds:
+        c.fillSmoothCircle(x, y, K["R_HAZE"], K["C_HAZE"], K["C_BG"])
+    for x, y, _ in leds:
+        c.fillSmoothCircle(x, y, K["R_RING"], K["C_RING"], K["C_HAZE"])
+    for x, y, lvl in leds:
+        c.fillSmoothCircle(x, y, K["R_CORE"], CORE[lvl], K["C_RING"])
+
+
 def face_casio(c):
     faces_lcd.face_casio(c, HH, MM, SS, MDAY, WDAY, TEMP_F, night=False)
 
@@ -277,6 +320,7 @@ FACES = {
     "retro": face_retro,
     "retro-night": face_retro_night,
     "dotmatrix": face_dotmatrix,
+    "pulsar": face_pulsar,
     "word": face_word,
 }
 

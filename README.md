@@ -1,6 +1,6 @@
 # Round LCD clock for the ESP32 Super Mini
 
-An NTP clock with weather on a 1.28" round GC9A01 display, with six watch
+An NTP clock with weather on a 1.28" round GC9A01 display, with seven watch
 faces that rotate every few hours. Builds for both the ESP32-S3 and ESP32-C3
 Super Mini boards from the same source.
 
@@ -8,17 +8,15 @@ Super Mini boards from the same source.
 |:-:|:-:|:-:|
 | ![word](docs/faces/word.png) | ![casio](docs/faces/casio.png) | ![mosaic](docs/faces/mosaic.png) |
 | word clock | segmented LCD | pastel tiles |
-| ![retro](docs/faces/retro.png) | ![dotmatrix](docs/faces/dotmatrix.png) | ![default](docs/faces/default.png) |
-| green LCD | 70s LED | analog |
+| ![retro](docs/faces/retro.png) | ![dotmatrix](docs/faces/dotmatrix.png) | ![pulsar](docs/faces/pulsar.png) |
+| green LCD | 70s LED, dot matrix | 70s LED, Pulsar style |
+| ![default](docs/faces/default.png) | ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) |
+| analog | casio, after sunset | retro, after sunset |
 
 The casio and retro faces switch to an EL-backlight green after sunset, and
 the mosaic tiles drift into blues. Sunrise and sunset come from the weather
 feed, so the switch happens at the real time for wherever you've set the
 coordinates.
-
-| ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) |
-|:-:|:-:|
-| casio, after sunset | retro, after sunset |
 
 These images are rendered from the face code with a small Python script
 (`tools/render/`), using the font tables out of TFT_eSPI, so the type is the
@@ -123,7 +121,7 @@ where n is which step failed.
 
 ## The faces
 
-All six are compiled into one binary and rotate every three hours. The order
+All seven are compiled into one binary and rotate every three hours. The order
 and the interval are at the top of `src/main.cpp`; set `ROTATE_MS` to 0 to
 stay on the first one.
 
@@ -138,6 +136,10 @@ stay on the first one.
   Grey by day, glows green at night.
 - **dotmatrix** - a 70s red LED array. The unlit dots stay faintly visible,
   which is what makes it look like a real one.
+- **pulsar** - the other 70s LED watch, the Pulsar P2 / Kingsonic type. Each
+  segment is a row of tiny discrete LEDs with a soft halo rather than a solid
+  bar, the digits are small in a big black window, and there's nothing else
+  on the face. Leading zero blanked below ten, colon blinks.
 - **default** - plain analog with a sweeping second hand and the weather
   beside the 9 and 3.
 
@@ -145,7 +147,7 @@ All the digital ones are 24-hour.
 
 Adding a face: copy one of the existing `src/faces/face_*.cpp`, keep it in
 its own namespace, export a `FaceVTable`, and add it to `ROTATION[]`. Nothing
-else needs to change. Each face is a few KB; linking all six costs about 2 KB
+else needs to change. Each face is a few KB; linking all seven costs about 2 KB
 over a single one because everything else is shared.
 
 ## Weather
