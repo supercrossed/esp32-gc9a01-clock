@@ -35,14 +35,28 @@ static const uint32_t WX_RETRY_MS  = 30UL * 1000UL;         // sooner after a fa
 // ---- face rotation --------------------------------------------------------
 // Every face is linked in; this is the running order and the dwell time.
 // Set ROTATE_MS to 0 to pin the display to ROTATION[0] and never switch.
+// The preview envs pass -D FORCE_FACE=$PREVIEW_FACE. If the variable was not
+// set the macro is defined but empty; catch that with a readable error rather
+// than the "expected primary-expression" the compiler would give.
+#define FF_CAT_(a, b) a##b
+#define FF_CAT(a, b)  FF_CAT_(a, b)
+#if defined(FORCE_FACE) && FF_CAT(FORCE_FACE, 1) == 1
+#error "FORCE_FACE is empty: set PREVIEW_FACE=FACE_<NAME> before building a preview env"
+#endif
+
 static const FaceVTable *const ROTATION[] = {
-#if defined(FORCE_DAY) || defined(FORCE_NIGHT)
+#if defined(FORCE_FACE)
+    // Single-face preview build: -D FORCE_FACE=FACE_PULSAR (etc) pins the
+    // display to that face so it can be looked at without waiting for the
+    // rotation to reach it.
+    &FORCE_FACE,
+#elif defined(FORCE_DAY) || defined(FORCE_NIGHT)
     // Theme preview builds: only the face whose theme is being checked.
     // Otherwise the preview would start on the word clock and not reach
     // retro for three hours.
     &FACE_RETRO,
 #else
-    &FACE_WORD, &FACE_RETRO, &FACE_DOTMATRIX, &FACE_PULSAR,
+    &FACE_WORD, &FACE_RETRO, &FACE_DOTMATRIX, &FACE_PULSAR, &FACE_PCB,
     &FACE_CASIO, &FACE_MOSAIC, &FACE_DEFAULT,
 #endif
 };
