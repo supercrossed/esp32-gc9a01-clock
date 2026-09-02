@@ -1,12 +1,10 @@
 // ---------------------------------------------------------------------------
-//  NTP clock + weather  -  ESP32-S3 Super Mini + GC9A01 240x240 round SPI LCD
+//  NTP clock + weather  -  ESP32-S3 / ESP32-C3 Super Mini + GC9A01 round LCD
 //
-//  This file owns the hardware, WiFi, NTP and the weather fetch. The visual
-//  design lives in faces/ - exactly one face is compiled per build, selected
-//  by build_src_filter in platformio.ini:
-//
-//      pio run -e default -t upload    analog face
-//      pio run -e casio   -t upload    Casio-style segmented LCD face
+//  This file owns the hardware, WiFi, NTP, the weather fetch and the face
+//  rotation. The visual design lives in faces/. Settings (WiFi, location,
+//  units) live in NVS and are entered through the captive setup hotspot in
+//  portal.cpp, so nothing has to be compiled in.
 //
 //  Rendering goes into an off-screen sprite and is blitted once per frame so
 //  nothing flickers, falling back to direct-to-panel drawing if the 115 KB
@@ -20,15 +18,47 @@
 #include <time.h>
 #include <sys/time.h>
 #include "face.h"
+#include "settings.h"
+#include "portal.h"
+#include "tz.h"
 
-// ----------------------------- user settings -------------------------------
-// WiFi, timezone and location live in config.h, which is gitignored. Copy
-// config.example.h to config.h and fill it in.
+// ----------------------------- compiled-in defaults ------------------------
+// config.h is optional. If present, its values seed a chip that has nothing
+// saved yet; anything entered through the setup page wins over them.
+#if __has_include("config.h")
 #include "config.h"
+#endif
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+#ifndef WIFI_PASS
+#define WIFI_PASS ""
+#endif
+#ifndef WX_LOCATION
+#define WX_LOCATION ""
+#endif
+#ifndef WX_UNITS
+#define WX_UNITS "fahrenheit"
+#endif
+#ifdef TZ_INFO
+static const char *CFG_TZ = TZ_INFO;
+#else
+static const char *CFG_TZ = nullptr;
+#endif
 
 // Weather: Open-Meteo, which needs no API key.
 static const uint32_t WX_PERIOD_MS = 10UL * 60UL * 1000UL;  // refresh every 10 min
 static const uint32_t WX_RETRY_MS  = 30UL * 1000UL;         // sooner after a failure
+
+// How long the network can be gone before the setup hotspot reopens.
+static const uint32_t PORTAL_AFTER_DOWN_MS = 60UL * 1000UL;
+
+// BOOT button: hold at power-on to wipe the settings and start setup over.
+#if CONFIG_IDF_TARGET_ESP32C3
+#define BOOT_BTN 9
+#else
+#define BOOT_BTN 0
+#endif
 
 // ---------------------------------------------------------------------------
 
@@ -86,12 +116,6 @@ static int nextFaceIdx(int cur)
 // immediate repaint when the face changes.
 static int      lastSec      = -1;
 
-static const char *WX_URL =
-    "http://api.open-meteo.com/v1/forecast?latitude=" WX_LAT "&longitude=" WX_LON
-    "&current=temperature_2m,weather_code,is_day"
-    "&daily=sunrise,sunset&timezone=auto&forecast_days=1"
-    "&temperature_unit=" WX_UNITS;
-
 TFT_eSPI    tft = TFT_eSPI();
 TFT_eSprite fb  = TFT_eSprite(&tft);   // full-screen frame buffer
 bool        useSprite = false;
@@ -109,15 +133,8 @@ volatile bool wxIsDay = true;
 volatile int  wxErr   = 0;    // 0 ok, else the stage that failed (shown on the face)
 volatile int  wxSunrise = -1; // minutes since local midnight, -1 = unknown
 volatile int  wxSunset  = -1;
+bool          wxUseF    = true;
 
-// Runs on core 0 alongside WiFi, so the fetch never stalls the render loop
-// on core 1.
-//
-// Plain HTTP on purpose. Open-Meteo serves this endpoint over http with no
-// redirect (verified), and a TLS handshake wants roughly 40 KB of heap plus
-// large contiguous mbedTLS buffers - on top of the 115 KB sprite and the WiFi
-// stack, that allocation is what was failing.
-//
 // "2026-09-01T07:04" -> minutes since midnight, or -1 if it does not parse.
 static int isoToMinutes(const char *iso)
 {
@@ -132,6 +149,66 @@ static int isoToMinutes(const char *iso)
     return hh * 60 + mm;
 }
 
+static String urlEncode(const String &s)
+{
+    String o;
+    for (char c : s) {
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.') o += c;
+        else if (c == ' ') o += '+';
+        else { char b[4]; snprintf(b, sizeof b, "%%%02X", (unsigned char)c); o += b; }
+    }
+    return o;
+}
+
+// Turn the typed location into coordinates and a timezone, once. Open-Meteo's
+// geocoder takes a postcode or a town name and answers over plain HTTP.
+static bool resolveLocation()
+{
+    if (settings.hasLoc) return true;
+    if (!settings.locQuery.length() || WiFi.status() != WL_CONNECTED) return false;
+
+    String url = "http://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name="
+                 + urlEncode(settings.locQuery);
+    WiFiClient client;
+    HTTPClient http;
+    http.setConnectTimeout(8000);
+    http.setTimeout(8000);
+    if (!http.begin(client, url)) return false;
+
+    bool ok = false;
+    if (http.GET() == HTTP_CODE_OK) {
+        // The reply lists every postcode in the town; keep only what we use.
+        JsonDocument filter;
+        JsonObject f = filter["results"][0].to<JsonObject>();
+        f["latitude"] = true; f["longitude"] = true; f["timezone"] = true;
+        f["name"] = true;     f["country_code"] = true;
+        JsonDocument doc;
+        if (!deserializeJson(doc, http.getString(), DeserializationOption::Filter(filter))) {
+            JsonObject r = doc["results"][0];
+            if (!r.isNull()) {
+                settings.lat     = r["latitude"]  | 0.0f;
+                settings.lon     = r["longitude"] | 0.0f;
+                settings.tzName  = (const char *)(r["timezone"] | "");
+                settings.locName = String((const char *)(r["name"] | "")) + ", "
+                                 + (const char *)(r["country_code"] | "");
+                settings.hasLoc  = true;
+                settingsSave();
+                ok = true;
+            }
+        }
+    }
+    http.end();
+    return ok;
+}
+
+// Runs on core 0 alongside WiFi (on the S3; the C3 has one core), so the
+// fetch never stalls the render loop.
+//
+// Plain HTTP on purpose. Open-Meteo serves this over http with no redirect,
+// and a TLS handshake wants roughly 40 KB of heap plus large contiguous
+// mbedTLS buffers - on top of the 115 KB sprite and the WiFi stack, that
+// allocation is what was failing.
+//
 // wxErr records which stage failed so the face can show it; there is no
 // usable serial console on this board.
 static void weatherTask(void *)
@@ -141,13 +218,26 @@ static void weatherTask(void *)
 
         if (WiFi.status() != WL_CONNECTED) {
             wxErr = 1;
+        } else if (!settings.hasLoc && !resolveLocation()) {
+            wxErr = 6;                                    // location not found
         } else {
+            if (settings.tzName.length()) applyTimezone(CFG_TZ);
+            wxUseF = settings.useF;
+
+            char url[256];
+            snprintf(url, sizeof url,
+                     "http://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
+                     "&current=temperature_2m,weather_code,is_day"
+                     "&daily=sunrise,sunset&timezone=auto&forecast_days=1"
+                     "&temperature_unit=%s",
+                     settings.lat, settings.lon, settings.useF ? "fahrenheit" : "celsius");
+
             WiFiClient client;
             HTTPClient http;
             http.setConnectTimeout(8000);
             http.setTimeout(8000);
 
-            if (!http.begin(client, WX_URL)) {
+            if (!http.begin(client, url)) {
                 wxErr = 2;
             } else {
                 int code = http.GET();
@@ -176,6 +266,22 @@ static void weatherTask(void *)
                                     daily["sunrise"][0] | (const char *)nullptr);
                                 wxSunset  = isoToMinutes(
                                     daily["sunset"][0]  | (const char *)nullptr);
+                            }
+
+                            // The feed also says which zone the coordinates
+                            // are in and the current offset. That keeps the
+                            // clock right for places the table does not know
+                            // and across DST changes.
+                            int         off = doc["utc_offset_seconds"] | 0;
+                            const char *tzn = doc["timezone"] | "";
+                            bool changed = !settings.hasOffset || off != settings.utcOffset
+                                        || (tzn[0] && settings.tzName != tzn);
+                            if (changed) {
+                                settings.utcOffset = off;
+                                settings.hasOffset = true;
+                                if (tzn[0]) settings.tzName = tzn;
+                                settingsSave();
+                                applyTimezone(CFG_TZ);
                             }
                         }
                     }
@@ -221,6 +327,90 @@ static void banner(const char *line1, const char *line2, uint16_t color)
     }
 }
 
+// What to do while the hotspot is up: the network to join, the address to
+// open, and how it is going.
+static void drawSetupScreen(const char *status)
+{
+    tft.fillScreen(0x0000);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(0xFD20, 0x0000); tft.drawString("WiFi setup",     120,  50, 4);
+    tft.setTextColor(0x9CD3, 0x0000); tft.drawString("join the network", 120, 82, 2);
+    tft.setTextColor(0xFFFF, 0x0000); tft.drawString(portal::AP_SSID,  120, 106, 4);
+    tft.setTextColor(0x9CD3, 0x0000); tft.drawString("then open",       120, 134, 2);
+    tft.setTextColor(0xFFFF, 0x0000); tft.drawString("192.168.4.1",     120, 158, 4);
+    tft.setTextColor(0x7BEF, 0x0000); tft.drawString(status,            120, 196, 2);
+}
+
+static const char *portalStatusText(portal::State s)
+{
+    switch (s) {
+        case portal::CONNECTING: return "connecting...";
+        case portal::OK:         return "connected";
+        case portal::FAIL:       return "could not join, try again";
+        default:                 return "waiting for a phone";
+    }
+}
+
+// Boot-time setup: hotspot up, sit here until a network works.
+static void runPortalUntilConnected()
+{
+    portal::start();
+    portal::State shown = portal::FAIL;   // anything but IDLE, so the first pass draws
+    for (;;) {
+        portal::handle();
+        portal::State s = portal::state();
+        if (s != shown) { shown = s; drawSetupScreen(portalStatusText(s)); }
+        // leave the hotspot up a few seconds so the phone can read "connected"
+        if (s == portal::OK && portal::sinceState() > 4000) { portal::stop(); return; }
+        delay(10);
+    }
+}
+
+// Hold BOOT for three seconds at power-on to start over.
+static bool bootHeld()
+{
+    pinMode(BOOT_BTN, INPUT_PULLUP);
+    delay(20);
+    if (digitalRead(BOOT_BTN) != LOW) return false;
+    banner("Hold BOOT", "3 s to reset the WiFi setup", 0xFD20);
+    uint32_t t0 = millis();
+    while (digitalRead(BOOT_BTN) == LOW) {
+        if (millis() - t0 > 3000) return true;
+        delay(20);
+    }
+    return false;
+}
+
+// config.h values, for a chip with nothing saved.
+static void seedDefaults()
+{
+    if (!settings.hasWifi() && strlen(WIFI_SSID)) {
+        settings.ssid = WIFI_SSID;
+        settings.pass = WIFI_PASS;
+    }
+    if (!settings.hasLoc && !settings.locQuery.length()) {
+#if defined(WX_LAT) && defined(WX_LON)
+        settings.lat    = atof(WX_LAT);
+        settings.lon    = atof(WX_LON);
+        settings.hasLoc = true;
+#endif
+        if (strlen(WX_LOCATION)) settings.locQuery = WX_LOCATION;
+        settings.useF = strcmp(WX_UNITS, "celsius") != 0;
+    }
+}
+
+// Small pill along the bottom of whatever face is showing, while the hotspot
+// is open because the network went away.
+template <typename GFX>
+static void drawPortalHint(GFX &g)
+{
+    g.fillRoundRect(44, 199, 152, 24, 12, 0x0000);
+    g.drawRoundRect(44, 199, 152, 24, 12, 0xFD20);
+    g.setTextDatum(MC_DATUM);
+    g.setTextColor(0xFD20, 0x0000);
+    g.drawString("WiFi: Clock-Setup", 120, 211, 2);
+}
+
 void setup()
 {
     // Serial is UART0 here (ARDUINO_USB_CDC_ON_BOOT=0), not USB-CDC, so
@@ -251,24 +441,39 @@ void setup()
         Serial.println("[disp] sprite alloc FAILED - drawing direct");
     }
 
-    banner("WiFi", WIFI_SSID, 0xE71C);
+    settingsLoad();
+    bool startOver = bootHeld();
+    if (startOver) settingsClear();
+    else           seedDefaults();
 
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
     WiFi.setAutoReconnect(true);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    uint32_t t0 = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 25000) delay(250);
+    bool up = false;
+    if (!startOver && settings.hasWifi()) {
+        banner("WiFi", settings.ssid.c_str(), 0xE71C);
+        WiFi.begin(settings.ssid.c_str(), settings.pass.c_str());
+        uint32_t t0 = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - t0 < 25000) delay(250);
+        up = WiFi.status() == WL_CONNECTED;
+    }
+    if (!up) runPortalUntilConnected();     // returns only once a network works
 
-    bool up = WiFi.status() == WL_CONNECTED;
-    banner(up ? "NTP" : "No WiFi", up ? "syncing..." : "retrying...",
-           up ? 0xE71C : 0xFD20);
+    // Where are we? Needed before NTP so the clock shows local time from the
+    // first frame. If it fails here the weather task keeps trying.
+    if (!settings.hasLoc && settings.locQuery.length()) {
+        banner("Location", settings.locQuery.c_str(), 0xE71C);
+        resolveLocation();
+    }
+    wxUseF = settings.useF;
+
+    banner("NTP", "syncing...", 0xE71C);
 
     // SNTP; the IDF layer re-syncs on its own roughly hourly afterwards.
-    configTzTime(TZ_INFO, "pool.ntp.org", "time.google.com", "time.nist.gov");
+    configTzTime(tzString(CFG_TZ), "pool.ntp.org", "time.google.com", "time.nist.gov");
 
-    t0 = millis();
+    uint32_t t0 = millis();
     while (time(nullptr) < 1700000000 && millis() - t0 < 20000) delay(200);
     timeValid = time(nullptr) > 1700000000;
 
@@ -285,9 +490,8 @@ void loop()
     struct tm t;
     localtime_r(&now, &t);
 
-    // A segmented face only changes when the second does, and its angled
-    // cells cost real time to rasterise - so redraw it at 1 Hz rather than
-    // flat out. An animated face redraws every pass for a smooth sweep.
+    portal::handle();
+
     // Rotate on schedule. Clearing the panel on the way out matters: faces do
     // not all paint every pixel, so without it the previous face can show
     // through in the margins.
@@ -300,8 +504,10 @@ void loop()
         tft.fillScreen(activeFace->background());
     }
 
+    // A segmented face only changes when the second does, and its angled
+    // cells cost real time to rasterise - so redraw it at 1 Hz rather than
+    // flat out. An animated face redraws every pass for a smooth sweep.
     const bool smooth = activeFace->smooth();
-
     bool due = smooth || t.tm_sec != lastSec;
 
     if (due) {
@@ -309,9 +515,11 @@ void loop()
         float sub = smooth ? tv.tv_usec / 1000000.0f : 0.0f;
         if (useSprite) {
             activeFace->renderSprite(fb, t, sub);
+            if (portal::running()) drawPortalHint(fb);
             fb.pushSprite(0, 0);
         } else {
             activeFace->renderDirect(tft, t, sub);
+            if (portal::running()) drawPortalHint(tft);
         }
     }
 
@@ -322,9 +530,23 @@ void loop()
         if (!timeValid && time(nullptr) > 1700000000) timeValid = true;
         statusCol = (timeValid && up) ? 0x2E68 : 0xFD20;
 
+        // Network gone for a while: open the hotspot so new details can be
+        // entered, but keep showing the time. Close it again once something
+        // works and the phone has had a moment to see that.
+        static uint32_t downSince = 0;
+        if (up) downSince = 0;
+        else if (!downSince) downSince = millis();
+        if (!up && downSince && millis() - downSince > PORTAL_AFTER_DOWN_MS
+            && !portal::running())
+            portal::start();
+        if (portal::running() && up && portal::state() != portal::CONNECTING
+            && portal::sinceState() > 4000)
+            portal::stop();
+
         // Throttled: reconnect() is a heavy call, do not hammer it at 1 Hz.
+        // Not while the hotspot is up either; it would fight a fresh attempt.
         static uint32_t lastRetry = 0;
-        if (!up && millis() - lastRetry > 10000) {
+        if (!up && !portal::running() && millis() - lastRetry > 10000) {
             lastRetry = millis();
             WiFi.reconnect();
         }

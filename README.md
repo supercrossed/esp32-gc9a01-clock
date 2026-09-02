@@ -57,12 +57,36 @@ You need [PlatformIO](https://platformio.org/) (the CLI or the VS Code
 extension). Then:
 
 ```
-cp src/config.example.h src/config.h      # put your WiFi and location in here
 pio run -e clock -t upload                # ESP32-S3
 pio run -e c3_clock -t upload             # ESP32-C3
 ```
 
-`config.h` is gitignored so your password stays on your machine.
+There's nothing to configure before building. WiFi and location are entered
+from a phone on first boot (next section). If you'd rather bake defaults in,
+copy `src/config.example.h` to `src/config.h`; it's gitignored so a password
+never ends up in the repo.
+
+## First boot: WiFi setup
+
+With nothing saved, the clock opens a hotspot called **Clock-Setup** and the
+screen tells you so. Join it from a phone and the setup page pops up on its
+own (if it doesn't, open `192.168.4.1`). Pick your network from the list,
+type the password, put in a ZIP or town name for the weather, choose °F or
+°C, and save. The clock tries the network with the hotspot still up so the
+phone is told whether it worked, then closes the hotspot and carries on.
+
+The location is looked up once through Open-Meteo's geocoder, which also
+returns the timezone, so there's no timezone to set. Common zones get their
+proper daylight-saving rules; anywhere else uses the UTC offset the weather
+feed reports, refreshed every ten minutes.
+
+To change any of it later, hold the **BOOT** button while powering on for
+three seconds. That wipes the saved settings and opens the hotspot again. It
+also reopens by itself, with the clock still running, if the network is gone
+for more than a minute.
+
+Everything is stored in the chip's flash, so it survives reflashing the app
+unless you erase the whole chip.
 
 Every build also drops a merged image (bootloader, partition table and app in
 one file, flashed at offset 0) into `firmware/<board>/`, and `flash.py` will
@@ -76,10 +100,11 @@ python scripts/flash.py c3 clock COM8
 It works out which chip is on which port, since both boards show up with the
 same USB VID/PID and port order tells you nothing.
 
-The clock images aren't in the repo because they have your WiFi password
-compiled into them, so they're gitignored. The only prebuilt images checked
-in are the `displaytest` ones, which have no WiFi in them at all. They're
-handy for checking the wiring before you've set anything up:
+The clock images aren't in the repo, because anyone building with a
+`config.h` would have their WiFi password compiled into them, so they're
+gitignored. The only prebuilt images checked in are the `displaytest` ones,
+which have no WiFi in them at all. They're handy for checking the wiring
+before you've set anything up:
 
 ```
 python scripts/flash.py c3 displaytest
@@ -117,7 +142,8 @@ adapter on the UART0 pins.
 The faces show what you'd otherwise want a serial console for: the hub dot
 (analog) or the dot in the seconds band (casio) is green once WiFi and NTP
 are both up, and the casio face shows `TEMP E<n>` if the weather fetch fails,
-where n is which step failed.
+where n is which step failed (6 means the location couldn't be found; try a
+town name instead of a postcode).
 
 ## The faces
 
@@ -180,7 +206,8 @@ over a single one because everything else is shared.
 
 From [Open-Meteo](https://open-meteo.com/), which doesn't need an API key.
 Temperature, condition code, day/night and today's sunrise and sunset, fetched
-every ten minutes over plain HTTP. HTTPS was dropped on purpose: the TLS
+every ten minutes over plain HTTP. The same service's geocoder turns the
+ZIP or town from setup into coordinates and a timezone. HTTPS was dropped on purpose: the TLS
 handshake wanted ~40 KB on top of the 115 KB frame buffer and was failing to
 allocate, and the endpoint is fine over HTTP.
 
@@ -192,8 +219,11 @@ On the C3 there's only one core, so there's a short hitch every ten minutes.
 ```
 src/
   main.cpp             hardware, WiFi, NTP, weather, face rotation
+  portal.cpp           the Clock-Setup hotspot and its page
+  settings.cpp         what setup saved, in NVS
+  tz.h                 IANA zone name -> POSIX rule
   face.h               face interface, shared weather icons, day/night
-  config.example.h     copy to config.h
+  config.example.h     optional compiled-in defaults
   faces/               one file per face
   tools/display_test.cpp
 firmware/s3, firmware/c3   prebuilt images

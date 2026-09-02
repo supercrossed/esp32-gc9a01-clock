@@ -212,7 +212,7 @@ static void render(GFX &g, const struct tm &t, float subSec)
 
         int nx = left + numW + 5;
         g.drawCircle(nx + 3, Y_TEMP + 5, 3, th.text);
-        g.drawString("F", nx + 9, Y_TEMP + 8, 2);
+        g.drawString(wxUnit(), nx + 9, Y_TEMP + 8, 2);
     }
 }
 

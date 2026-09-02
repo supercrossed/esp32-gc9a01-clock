@@ -141,7 +141,7 @@ static void render(GFX &g, const struct tm &t, float subSec)
         int w = g.textWidth(buf, 4);
         g.drawCircle(112 + w / 2 + 8, 11, 3, C_TEXT);
         g.setTextDatum(TL_DATUM);
-        g.drawString("F", 112 + w / 2 + 14, 12, 2);
+        g.drawString(wxUnit(), 112 + w / 2 + 14, 12, 2);
     }
 }
 

@@ -29,8 +29,11 @@ extern volatile int  wxSunrise;  // minutes since local midnight, -1 unknown
 extern volatile int  wxSunset;
 extern volatile int  wxErr;      // 0 = ok, else which fetch stage failed:
                                  // 1 WiFi down  2 begin  3 HTTP  4 JSON  5 shape
+extern bool          wxUseF;     // temperature unit chosen in setup
 extern uint16_t      statusCol;  // green = WiFi up + NTP synced, amber otherwise
 extern bool          timeValid;
+
+inline const char *wxUnit() { return wxUseF ? "F" : "C"; }
 
 // ---- the face interface --------------------------------------------------
 // Every face lives in its own namespace and exposes one FaceVTable, so all of

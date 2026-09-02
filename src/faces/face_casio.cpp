@@ -343,6 +343,7 @@ static uint16_t seg14ForLetter(char c)
 {
     switch (c) {
         case 'A': return 0x00F7;
+        case 'C': return 0x0039;   // E without the middle bars
         case 'D': return 0x120F;
         case 'E': return 0x00F9;
         case 'F': return 0x00F1;
@@ -454,7 +455,7 @@ static void render(GFX &g, const struct tm &t, float subSec)
 
         // degree ring + F, because the built-in fonts have no degree glyph
         g.drawCircle(left + wsum + 6, dy + 4, 3, th.ink);
-        label(g, "F", left + wsum + 2, dy + 9, th, 2);
+        label(g, wxUnit(), left + wsum + 2, dy + 9, th, 2);
     }
 
     // ---- DATE -------------------------------------------------------------

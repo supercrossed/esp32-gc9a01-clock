@@ -1,29 +1,24 @@
-// Copy this file to config.h and fill it in. config.h is gitignored so your
-// credentials stay out of the repo.
+// ---------------------------------------------------------------------------
+//  Optional. Nothing here is needed: on first boot the clock opens a hotspot
+//  called "Clock-Setup" and everything below can be typed into the page it
+//  serves. Values here are only defaults for a chip with nothing saved yet;
+//  whatever is entered through the setup page takes over.
+//
+//  To use: copy to config.h and uncomment what you want. config.h is
+//  gitignored so a password never ends up in the repo.
+// ---------------------------------------------------------------------------
 #pragma once
 
-// ---- WiFi -------------------------------------------------------------
-#define WIFI_SSID  "your-network"
-#define WIFI_PASS  "your-password"
+// #define WIFI_SSID    "your network"
+// #define WIFI_PASS    "your password"
 
-// ---- timezone ---------------------------------------------------------
-// POSIX TZ string. A few common ones:
-//   US Eastern   "EST5EDT,M3.2.0,M11.1.0"
-//   US Central   "CST6CDT,M3.2.0,M11.1.0"
-//   US Mountain  "MST7MDT,M3.2.0,M11.1.0"
-//   US Pacific   "PST8PDT,M3.2.0,M11.1.0"
-//   UK           "GMT0BST,M3.5.0/1,M10.5.0"
-//   Central EU   "CET-1CEST,M3.5.0,M10.5.0/3"
-//   India        "IST-5:30"
-#define TZ_INFO    "EST5EDT,M3.2.0,M11.1.0"
+// Where you are, for the weather. A ZIP / postcode or a town name; it is
+// looked up once on first connect and the timezone comes with it.
+// #define WX_LOCATION  "32839"
 
-// ---- location, for the weather ---------------------------------------
-// Open-Meteo takes coordinates, not a postcode. Anywhere within a few miles
-// of you reads the same. These are Orlando, FL.
-#define WX_LAT     "28.4869"
-#define WX_LON     "-81.4103"
+// #define WX_UNITS     "fahrenheit"      // or "celsius"
 
-// ---- units ------------------------------------------------------------
-// "fahrenheit" or "celsius". The faces print the number as-is with an F
-// suffix, so if you switch this you'll want to change that letter too.
-#define WX_UNITS   "fahrenheit"
+// Only if you want to pin these rather than derive them from the location:
+// #define WX_LAT       "28.4869"
+// #define WX_LON       "-81.4103"
+// #define TZ_INFO      "EST5EDT,M3.2.0,M11.1.0"   // POSIX rule string

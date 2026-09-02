@@ -119,7 +119,7 @@ static void drawWeather(GFX &g)
     g.drawString(buf, left, WX_CY + 13, 2);
     if (wxValid) {
         g.drawCircle(left + tw + 3, WX_CY + 13 - 5, 2, C_TEXT);
-        g.drawString("F", left + tw + 7, WX_CY + 13, 2);
+        g.drawString(wxUnit(), left + tw + 7, WX_CY + 13, 2);
     }
 }
 
