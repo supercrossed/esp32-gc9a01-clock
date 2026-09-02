@@ -33,8 +33,10 @@ static const uint32_t WX_RETRY_MS  = 30UL * 1000UL;         // sooner after a fa
 // ---------------------------------------------------------------------------
 
 // ---- face rotation --------------------------------------------------------
-// Every face is linked in; this is the running order and the dwell time.
-// Set ROTATE_MS to 0 to pin the display to ROTATION[0] and never switch.
+// Every face is linked in; this is the pool and the dwell time. With
+// ROTATE_RANDOM the next face is drawn at random from the others, and the
+// boot face is random too. Without it they run in this order. Set ROTATE_MS
+// to 0 to never switch.
 // The preview envs pass -D FORCE_FACE=$PREVIEW_FACE. If the variable was not
 // set the macro is defined but empty; catch that with a readable error rather
 // than the "expected primary-expression" the compiler would give.
@@ -62,10 +64,24 @@ static const FaceVTable *const ROTATION[] = {
 };
 static const int      ROTATION_N = sizeof(ROTATION) / sizeof(ROTATION[0]);
 static const uint32_t ROTATE_MS  = 3UL * 60UL * 60UL * 1000UL;   // 3 hours
+static const bool     ROTATE_RANDOM = true;
 
 const FaceVTable *activeFace = ROTATION[0];
 static int      faceIdx      = 0;
 static uint32_t faceSince    = 0;
+
+// esp_random() is the hardware RNG, so nothing needs seeding. Picking from
+// "everyone but the current one" guarantees each switch is visible.
+static int firstFaceIdx()
+{
+    return (ROTATE_RANDOM && ROTATION_N > 1) ? (int)(esp_random() % ROTATION_N) : 0;
+}
+static int nextFaceIdx(int cur)
+{
+    if (ROTATION_N < 2)  return 0;
+    if (!ROTATE_RANDOM)  return (cur + 1) % ROTATION_N;
+    return (cur + 1 + (int)(esp_random() % (ROTATION_N - 1))) % ROTATION_N;
+}
 // File scope rather than function-local: the rotation resets it to force an
 // immediate repaint when the face changes.
 static int      lastSec      = -1;
@@ -213,6 +229,9 @@ void setup()
 
     parkOnboardLed();
 
+    faceIdx    = firstFaceIdx();
+    activeFace = ROTATION[faceIdx];
+
     tft.init();
     tft.setRotation(0);
     tft.fillScreen(activeFace->background());
@@ -220,8 +239,7 @@ void setup()
     // Initialise every face, not just the first: rotation can reach any of
     // them, and their init work (geometry tables, tile seeds) is one-off.
     for (int i = 0; i < ROTATION_N; i++) ROTATION[i]->init();
-    activeFace = ROTATION[0];
-    faceSince  = millis();
+    faceSince = millis();
 
     // 240*240*2 = 115200 bytes, claimed before WiFi comes up so the heap is
     // still unfragmented. If it fails we still run, just slower.
@@ -274,7 +292,7 @@ void loop()
     // not all paint every pixel, so without it the previous face can show
     // through in the margins.
     if (ROTATE_MS && millis() - faceSince >= ROTATE_MS) {
-        faceIdx    = (faceIdx + 1) % ROTATION_N;
+        faceIdx    = nextFaceIdx(faceIdx);
         activeFace = ROTATION[faceIdx];
         faceSince  = millis();
         lastSec    = -1;                       // force an immediate repaint

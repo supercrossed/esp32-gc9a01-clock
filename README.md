@@ -1,15 +1,15 @@
 # Round LCD clock for the ESP32 Super Mini
 
 An NTP clock with weather on a 1.28" round GC9A01 display, with eight watch
-faces that rotate every few hours. Builds for both the ESP32-S3 and ESP32-C3
+faces. It picks a different one at random every few hours. Builds for both the ESP32-S3 and ESP32-C3
 Super Mini boards from the same source.
 
 | | | | |
 |:-:|:-:|:-:|:-:|
 | ![word](docs/faces/word.png) | ![casio](docs/faces/casio.png) | ![mosaic](docs/faces/mosaic.png) | ![retro](docs/faces/retro.png) |
-| word clock | segmented LCD | pastel tiles | green LCD |
+| word | casio | mosaic | retro |
 | ![dotmatrix](docs/faces/dotmatrix.png) | ![pulsar](docs/faces/pulsar.png) | ![pcb](docs/faces/pcb.png) | ![default](docs/faces/default.png) |
-| 70s LED, dot matrix | 70s LED, Pulsar style | bare board, DIP LED modules | analog |
+| dotmatrix | pulsar | pcb | default |
 | ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) | | |
 | casio, after sunset | retro, after sunset | | |
 
@@ -121,9 +121,11 @@ where n is which step failed.
 
 ## The faces
 
-All eight are compiled into one binary and rotate every three hours. The order
-and the interval are at the top of `src/main.cpp`; set `ROTATE_MS` to 0 to
-stay on the first one.
+All eight are compiled into one binary. Every three hours the clock switches
+to a different face picked at random, never the one already showing, and it
+starts on a random one at boot. The interval is `ROTATE_MS` at the top of
+`src/main.cpp`; set it to 0 to stay on one face, or set `ROTATE_RANDOM` to
+false to go through `ROTATION[]` in order instead.
 
 To look at one face without waiting for the rotation to reach it, build a
 preview pinned to it. The preview envs skip the `firmware/` export so they
