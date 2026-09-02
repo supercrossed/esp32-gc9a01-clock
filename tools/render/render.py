@@ -15,6 +15,7 @@ import math
 from canvas import Canvas, TL, TC, TR, ML, MC, MR
 import faces_lcd
 import faces_pcb
+import faces_analog
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.normpath(os.path.join(HERE, "..", "..", "src", "faces"))
@@ -323,6 +324,9 @@ FACES = {
     "dotmatrix": face_dotmatrix,
     "pulsar": face_pulsar,
     "pcb": lambda c: faces_pcb.face_pcb(c, HH, MM, SS),
+    "classic": lambda c: faces_analog.face_classic(c, HH, MM, SS, MDAY),
+    "modern": lambda c: faces_analog.face_modern(c, HH, MM, SS, MDAY, WDAY,
+                                                 TEMP_F, IS_DAY, SUNSET),
     "word": face_word,
 }
 

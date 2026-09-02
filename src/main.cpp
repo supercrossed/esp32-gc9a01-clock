@@ -59,7 +59,7 @@ static const FaceVTable *const ROTATION[] = {
     &FACE_RETRO,
 #else
     &FACE_WORD, &FACE_RETRO, &FACE_DOTMATRIX, &FACE_PULSAR, &FACE_PCB,
-    &FACE_CASIO, &FACE_MOSAIC, &FACE_DEFAULT,
+    &FACE_CASIO, &FACE_MOSAIC, &FACE_DEFAULT, &FACE_CLASSIC, &FACE_MODERN,
 #endif
 };
 static const int      ROTATION_N = sizeof(ROTATION) / sizeof(ROTATION[0]);

@@ -1,6 +1,6 @@
 # Round LCD clock for the ESP32 Super Mini
 
-An NTP clock with weather on a 1.28" round GC9A01 display, with eight watch
+An NTP clock with weather on a 1.28" round GC9A01 display, with ten watch
 faces. It picks a different one at random every few hours. Builds for both the ESP32-S3 and ESP32-C3
 Super Mini boards from the same source.
 
@@ -10,8 +10,8 @@ Super Mini boards from the same source.
 | word | casio | mosaic | retro |
 | ![dotmatrix](docs/faces/dotmatrix.png) | ![pulsar](docs/faces/pulsar.png) | ![pcb](docs/faces/pcb.png) | ![default](docs/faces/default.png) |
 | dotmatrix | pulsar | pcb | default |
-| ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) | | |
-| casio, after sunset | retro, after sunset | | |
+| ![classic](docs/faces/classic.png) | ![modern](docs/faces/modern.png) | ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) |
+| classic | modern | casio, after sunset | retro, after sunset |
 
 The casio and retro faces switch to an EL-backlight green after sunset, and
 the mosaic tiles drift into blues. Sunrise and sunset come from the weather
@@ -121,7 +121,7 @@ where n is which step failed.
 
 ## The faces
 
-All eight are compiled into one binary. Every three hours the clock switches
+All ten are compiled into one binary. Every three hours the clock switches
 to a different face picked at random, never the one already showing, and it
 starts on a random one at boot. The interval is `ROTATE_MS` at the top of
 `src/main.cpp`; set it to 0 to stay on one face, or set `ROTATE_RANDOM` to
@@ -160,12 +160,20 @@ Use `preview` instead of `c3_preview` for the S3.
   The detail is the point; strip it back and it becomes an icon.
 - **default** - plain analog with a sweeping second hand and the weather
   beside the 9 and 3.
+- **classic** - ivory dress dial. Railroad minute track, upright Roman
+  numerals, a framed date window at 3 in place of the III, small seconds at 6
+  in place of the VI, and blued Breguet hands with the hollow moon near the
+  tip. No centre seconds hand; the seconds live in the sub-dial.
+- **modern** - charcoal sports dial with baton indices, broad lumed hands and
+  an orange centre seconds. Weather in a sub-dial at 9, the date in a tile at
+  3 with the weekday over it, and at 6 a sun or moon for the time of day with
+  the next sunrise or sunset time under it.
 
 All the digital ones are 24-hour.
 
 Adding a face: copy one of the existing `src/faces/face_*.cpp`, keep it in
 its own namespace, export a `FaceVTable`, and add it to `ROTATION[]`. Nothing
-else needs to change. Each face is a few KB; linking all eight costs about 2 KB
+else needs to change. Each face is a few KB; linking all ten costs about 2 KB
 over a single one because everything else is shared.
 
 ## Weather
