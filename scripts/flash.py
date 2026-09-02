@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import glob
+import tempfile
 import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -86,8 +87,27 @@ def main():
         print("WRITE FAILED")
         return 1
 
-    print("verifying ...")
-    if subprocess.run(base + ["verify_flash", "0x0", img]).returncode != 0:
+    # Verify the application region only, not the whole merged image. The
+    # merged file has 0xFF padding where the NVS partition sits (0x9000), and
+    # the firmware writes WiFi calibration data there on its first boot - so a
+    # whole-image verify passes right after flashing and then fails forever
+    # after, which looks like a corrupt flash when nothing is wrong. The app
+    # is the last thing in the merged image, so it can be sliced straight out.
+    print("verifying application region ...")
+    app_off = 0x10000
+    with open(img, "rb") as f:
+        app = f.read()[app_off:]
+    tmp = os.path.join(tempfile.gettempdir(), "flash_verify_app.bin")
+    with open(tmp, "wb") as f:
+        f.write(app)
+    try:
+        rc = subprocess.run(base + ["verify_flash", hex(app_off), tmp]).returncode
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    if rc != 0:
         print("VERIFY FAILED - the board is NOT running this image")
         return 1
 
