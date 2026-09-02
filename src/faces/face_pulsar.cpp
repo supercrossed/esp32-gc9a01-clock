@@ -37,9 +37,12 @@ namespace face_pulsar {
 // Four digits and a colon, small, centred, with a lot of black around them.
 #define DIG_W   (4 * P)                        // five columns span four pitches
 #define DIG_H   (6 * P)                        // seven rows span six
-#define GAP     10                             // between digits of a pair
-#define COLON_W 18                             // pair gap, holding the colon
-#define X0      37
+// Digits are separated by one empty LED cell (2 * P), so the space between
+// them is visibly wider than the pitch inside a digit. Tighter than that and
+// the outer columns of neighbouring digits merge into one bar.
+#define GAP     16                             // between digits of a pair
+#define COLON_W 24                             // pair gap: empty, colon, empty
+#define X0      28                             // centres the 184 px row
 #define X1      (X0 + DIG_W + GAP)
 #define XC      (X1 + DIG_W + COLON_W / 2)     // colon column, = 120
 #define X2      (X1 + DIG_W + COLON_W)
