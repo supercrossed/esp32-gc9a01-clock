@@ -494,9 +494,14 @@ static void faceRender(TFT_eSPI    &g, const struct tm &t, float sub) { render(g
 static int faceDirty(const struct tm &t, float, const struct tm &pt, float,
                      DirtyRect *out, int max)
 {
+    // The capacitor animates every frame; everything else changes at most
+    // once a second. The second box has to cover the gauge and the lamps as
+    // well as the readouts - the needle tracks signal strength and the lamp
+    // tracks the link, so leaving them out froze both on the banded display.
     int n = 0;
-    if (max > 0) out[n++] = { 30, 30, 62, 62 };          // the capacitor box
-    if (t.tm_sec != pt.tm_sec && n < max) out[n++] = { 20, 92, 200, 126 };
+    if (max > 0) out[n++] = { 30, 30, 62, 62 };            // the capacitor
+    if (t.tm_sec != pt.tm_sec && n < max)
+        out[n++] = { 27, 30, 190, 186 };                   // gauge, lamps, readouts
     return n;
 }
 
