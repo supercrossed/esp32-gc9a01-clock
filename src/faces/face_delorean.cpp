@@ -56,6 +56,7 @@ namespace face_delorean {
 #define C_FLUX        0xFFE0   // a lit bulb
 #define C_FLUX_HOT    0xFFFF   // its white-hot centre
 #define C_FLUX_HALO   0xFC00   // the warm spill around it
+#define C_FLUX_FADE   0xB380   // a bulb trailing off behind the pulse
 #define C_FLUX_OFF    0x4A29   // an unlit bulb
 #define C_FLUX_DIM    0x8C51   // its filament, still just visible
 #define C_YELLOW      0xFFE0
@@ -235,13 +236,16 @@ static void fluxCapacitor(GFX &g, int x, int y, int w, int h, float phase)
     // the first TRAVEL of it; the remainder is a dark beat before the next
     // one leaves. Without that gap the arms never fully go out and the
     // effect reads as a continuous ripple rather than discrete pulses.
-    const float TRAVEL = 0.72f;
-    // How far along the arms the pulse has reached, or -1 during the pause.
-    // It starts at the innermost bulb rather than at zero, so the first
-    // bulb lights the instant the pulse leaves the junction.
-    const float FIRST = 0.22f;
+    const float TRAVEL = 0.80f;
+    // Where the head is, or -1 during the pause. It starts at the innermost
+    // bulb rather than at zero so a bulb lights the instant the pulse leaves
+    // the junction, and it runs well past the outermost one (which sits at
+    // 0.94) so the tip has room to fade out behind it. Ending the sweep at
+    // 1.0 cut the tip off at full brightness, which is what made the
+    // animation stop dead rather than trail away.
+    const float FIRST = 0.22f, END = 1.62f;
     float head = (phase < TRAVEL)
-               ? FIRST + (1.0f - FIRST) * (phase / TRAVEL)
+               ? FIRST + (END - FIRST) * (phase / TRAVEL)
                : -1.0f;
 
     for (int a = 0; a < 3; a++) {
@@ -254,25 +258,32 @@ static void fluxCapacitor(GFX &g, int x, int y, int w, int h, float phase)
             float d = (head < 0) ? 9.0f : (head - p);
             int level;
             if      (d < 0)     level = 0;         // the pulse is not here yet
-            else if (d < 0.16f) level = 3;         // the head is on this bulb
-            else if (d < 0.32f) level = 2;         // just behind it
-            else if (d < 0.50f) level = 1;         // fading
+            else if (d < 0.14f) level = 4;         // the head is on this bulb
+            else if (d < 0.28f) level = 3;
+            else if (d < 0.44f) level = 2;
+            else if (d < 0.62f) level = 1;         // last of the glow
             else                level = 0;         // idle
 
+            // four steps down from white-hot to a bare ember, so a bulb
+            // trails off rather than switching out
             switch (level) {
-                case 3:
+                case 4:
                     g.fillCircle(bx, by, 5, C_FLUX_HALO);
                     g.fillCircle(bx, by, 3, C_FLUX);
                     g.fillCircle(bx, by, 2, C_FLUX_HOT);
                     break;
-                case 2:
+                case 3:
                     g.fillCircle(bx, by, 4, C_FLUX_HALO);
                     g.fillCircle(bx, by, 3, C_FLUX);
                     g.fillCircle(bx, by, 1, C_FLUX_HOT);
                     break;
-                case 1:
+                case 2:
                     g.fillCircle(bx, by, 3, C_FLUX);
                     g.fillCircle(bx, by, 1, C_FLUX_HOT);
+                    break;
+                case 1:
+                    g.fillCircle(bx, by, 3, C_FLUX_FADE);
+                    g.fillCircle(bx, by, 1, C_FLUX);
                     break;
                 default:
                     g.fillCircle(bx, by, 3, C_FLUX_OFF);

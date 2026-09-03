@@ -106,8 +106,8 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
             c.drawRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_FLUX_BEZEL"])
         # all three arms live; a pulse runs from the junction outward, then
         # a dark beat before the next one leaves
-        TRAVEL, FIRST = 0.72, 0.22
-        head = FIRST + (1.0 - FIRST) * (phase / TRAVEL) if phase < TRAVEL else -1.0
+        TRAVEL, FIRST, END = 0.80, 0.22, 1.62
+        head = FIRST + (END - FIRST) * (phase / TRAVEL) if phase < TRAVEL else -1.0
         for a in range(3):
             for i in range(4):
                 pos = 0.22 + i * 0.24
@@ -117,17 +117,20 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
                 if d < 0:
                     c.fillCircle(bx, by, 3, K["C_FLUX_OFF"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_DIM"])
-                elif d < 0.16:
+                elif d < 0.14:
                     c.fillCircle(bx, by, 5, K["C_FLUX_HALO"])
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 2, K["C_FLUX_HOT"])
-                elif d < 0.32:
+                elif d < 0.28:
                     c.fillCircle(bx, by, 4, K["C_FLUX_HALO"])
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
-                elif d < 0.50:
+                elif d < 0.44:
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
+                elif d < 0.62:
+                    c.fillCircle(bx, by, 3, K["C_FLUX_FADE"])
+                    c.fillCircle(bx, by, 1, K["C_FLUX"])
                 else:
                     c.fillCircle(bx, by, 3, K["C_FLUX_OFF"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_DIM"])
