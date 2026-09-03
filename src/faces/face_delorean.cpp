@@ -11,14 +11,14 @@
 //  brief, the month is spelled out rather than numbered, and the steps
 //  readout gives way to it:
 //
-//     flux capacitor      plutonium gauge (WiFi signal)     TEMP
-//     HOUR  MIN  SEC  YEAR  COND (weather code)
-//     WEEK  DAY  MONTH (spelled)  SUNSET
-//     SUNRISE  DAYLIGHT
+//     flux capacitor            plutonium gauge (WiFi signal)
+//     HOUR  MIN  SEC  YEAR
+//     WEEK  DAY  MONTH (spelled)  DAYLIGHT
+//     SUNRISE/SUNSET (alternating)  TEMP  DAY NO
 //
-//  The flux capacitor flickers on a three-count, like the prop: the three
-//  arms light in sequence toward the centre. Nothing here is a bitmap; the
-//  Y-shaped tube assembly is drawn from lines and discs.
+//  The flux capacitor charges: all three arms are live and pulses of light
+//  run from the junction out to the terminals. Nothing here is a bitmap;
+//  the whole assembly is drawn from lines and discs.
 // ---------------------------------------------------------------------------
 #include "../face.h"
 #include <WiFi.h>
@@ -188,14 +188,14 @@ static void well(GFX &g, int x, int y, int w, int h)
 // to the upper corners, one dropping to the bottom centre, meeting at a
 // junction below the middle. Each tube is a wide dark channel with a lighter
 // core (that reads as glass), a bulb at its outer end where it enters a
-// terminal block, and three smaller bulbs stepping down it toward the
-// junction. Firing an arm lights its bulbs from the outside in, which is the
-// chase the prop does.
+// terminal block, and four smaller bulbs stepping down it toward the
+// junction. All three arms are live at once and a pulse of light travels
+// from the junction outward along every arm, which is the prop charging.
 //
 // Drawn in that order - box, tube walls, tube cores, terminals, bulbs - so
 // each layer sits over the one behind it, the way the real assembly stacks.
 template <typename GFX>
-static void fluxCapacitor(GFX &g, int x, int y, int w, int h, int step, float phase)
+static void fluxCapacitor(GFX &g, int x, int y, int w, int h, float phase)
 {
     // the housing: black box, thin bright bezel, a darker inner shadow
     g.fillRect(x, y, w, h, C_FLUX_BOX);
@@ -226,33 +226,57 @@ static void fluxCapacitor(GFX &g, int x, int y, int w, int h, int step, float ph
         g.drawRect(ax[a] - 5, ay[a] - 4, 10, 8, C_FLUX_BEZEL);
     }
 
-    // the bulbs: three down each arm, brightest at the outer end. An arm
-    // that is firing lights all three; the others hold a dim filament.
+    // The bulbs: four down each arm, and all three arms fire together. A
+    // pulse travels from the junction out to the terminals, so each bulb
+    // brightens as the pulse reaches it and fades behind it. That is the
+    // charging flow, rather than one arm at a time.
+    //
+    // `phase` runs 0..1 over one pulse. A bulb at position p along its arm
+    // is brightest when the pulse is at p, and its brightness falls off with
+    // the distance between them - so the light appears to move outward.
     for (int a = 0; a < 3; a++) {
-        bool lit = (a == step);
-        for (int i = 0; i < 3; i++) {
-            // i = 0 nearest the junction, 2 nearest the terminal
-            float f  = 0.30f + i * 0.28f;
-            int   bx = cx + (int)((ax[a] - cx) * f);
-            int   by = jy + (int)((ay[a] - jy) * f);
-            if (lit) {
-                // a warm halo, a bright core, and a white centre: the tubes
-                // glow rather than switching on flat
-                g.fillCircle(bx, by, 4, C_FLUX_HALO);
-                g.fillCircle(bx, by, 3, C_FLUX);
-                g.fillCircle(bx, by, 1, C_FLUX_HOT);
-            } else {
-                g.fillCircle(bx, by, 3, C_FLUX_OFF);
-                g.fillCircle(bx, by, 1, C_FLUX_DIM);
+        for (int i = 0; i < 4; i++) {
+            float p  = 0.22f + i * 0.24f;         // where this bulb sits, 0..1
+            int   bx = cx + (int)((ax[a] - cx) * p);
+            int   by = jy + (int)((ay[a] - jy) * p);
+
+            float d = phase - p;                   // how far the pulse is past it
+            if (d < 0) d += 1.0f;                  // the pulse wraps around
+            // a short bright head with a tail behind it
+            int level;
+            if      (d < 0.18f) level = 3;         // the pulse is on this bulb
+            else if (d < 0.36f) level = 2;         // just behind it
+            else if (d < 0.58f) level = 1;         // fading
+            else                level = 0;         // idle
+
+            switch (level) {
+                case 3:
+                    g.fillCircle(bx, by, 5, C_FLUX_HALO);
+                    g.fillCircle(bx, by, 3, C_FLUX);
+                    g.fillCircle(bx, by, 2, C_FLUX_HOT);
+                    break;
+                case 2:
+                    g.fillCircle(bx, by, 4, C_FLUX_HALO);
+                    g.fillCircle(bx, by, 3, C_FLUX);
+                    g.fillCircle(bx, by, 1, C_FLUX_HOT);
+                    break;
+                case 1:
+                    g.fillCircle(bx, by, 3, C_FLUX);
+                    g.fillCircle(bx, by, 1, C_FLUX_HOT);
+                    break;
+                default:
+                    g.fillCircle(bx, by, 3, C_FLUX_OFF);
+                    g.fillCircle(bx, by, 1, C_FLUX_DIM);
+                    break;
             }
         }
     }
 
-    // the junction block, always lit, pulsing gently
-    int jr = (phase < 0.5f) ? 5 : 4;
+    // The junction, where every pulse is born: brightest as one leaves.
+    int jr = (phase < 0.18f) ? 6 : 5;
     g.fillCircle(cx, jy, jr + 1, C_FLUX_HALO);
     g.fillCircle(cx, jy, jr, C_FLUX);
-    g.fillCircle(cx, jy, 2, C_FLUX_HOT);
+    g.fillCircle(cx, jy, jr - 3, C_FLUX_HOT);
 }
 
 // ---- plutonium gauge -------------------------------------------------------
@@ -342,21 +366,6 @@ static const char *MONTHS[12] = {
 };
 static const char *WDAYS[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT" };
 
-// A weather code condensed to three letters for the COND readout.
-static const char *condWord(int code)
-{
-    switch (iconForCode(code)) {
-        case WX_CLEAR:  return "CLR";
-        case WX_PARTLY: return "PCL";
-        case WX_CLOUD:  return "OVC";
-        case WX_FOG:    return "FOG";
-        case WX_RAIN:   return "RAI";
-        case WX_SNOW:   return "SNO";
-        case WX_STORM:  return "STM";
-        default:        return "---";
-    }
-}
-
 // ---- the face ---------------------------------------------------------------
 template <typename GFX>
 static void render(GFX &g, const struct tm &t, float subSec)
@@ -369,9 +378,8 @@ static void render(GFX &g, const struct tm &t, float subSec)
     g.drawRoundRect(14, 22, 212, 196, 8, C_FRAME);
 
     // ---- flux capacitor and gauge across the top --------------------------
-    float ticks = (t.tm_sec + subSec) * 3.0f;
-    int   step  = ((int)ticks) % 3;
-    fluxCapacitor(g, 30, 30, 62, 62, step, ticks - (int)ticks);
+    float ticks = (t.tm_sec + subSec) / 0.7f;      // one pulse every 0.7 s
+    fluxCapacitor(g, 30, 30, 62, 62, ticks - (int)ticks);
 
     int rssi = WiFi.RSSI();
     int sig  = (WiFi.status() == WL_CONNECTED) ? 2 * (rssi + 100) : 0;
@@ -380,20 +388,11 @@ static void render(GFX &g, const struct tm &t, float subSec)
     gauge(g, 104, 32, 92, 58, sig);
     trefoil(g, 207, 66, 4);
 
-    // ---- TEMP, at the right, as the original has it -----------------------
-    tab(g, "TEMP", 188, 84, 40);
-    well(g, 168, 96, 40, 22);
-    if (wxValid) snprintf(buf, sizeof buf, "%2d", wxTempF);
-    else         strcpy(buf, "--");
-    digits(g, buf, 174, 99, 13, 16, 3, 4, C_RED, C_RED_OFF);
-
-    // ---- destination row: HOUR MIN SEC YEAR COND --------------------------
-    // labels
+    // ---- destination row: HOUR MIN SEC YEAR -------------------------------
     tab(g, "HOUR", 40,  96, 34);
     tab(g, "MIN",  78,  96, 34);
     tab(g, "SEC",  116, 96, 34);
-    tab(g, "YEAR", 156, 96, 40);
-    // (TEMP's tab is drawn above, at the right)
+    tab(g, "YEAR", 162, 96, 52);
 
     well(g, 23, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_hour);
@@ -407,15 +406,15 @@ static void render(GFX &g, const struct tm &t, float subSec)
     snprintf(buf, sizeof buf, "%02d", t.tm_sec);
     digits(g, buf, 102, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
-    well(g, 137, 108, 50, 24);
+    well(g, 137, 108, 56, 24);
     snprintf(buf, sizeof buf, "%04d", t.tm_year + 1900);
-    digits(g, buf, 140, 111, 10, 18, 3, 2, C_RED, C_RED_OFF);
+    digits(g, buf, 141, 111, 11, 18, 3, 2, C_RED, C_RED_OFF);
 
     // ---- present row: WEEK DAY MONTH (spelled) SUNSET ---------------------
     tab(g, "WEEK",  44,  138, 40);
     tab(g, "DAY",   86,  138, 34);
     tab(g, "MONTH", 134, 138, 52);
-    tab(g, "SUNSET", 190, 138, 44);
+    tab(g, "DAYLIGHT", 190, 138, 56);
 
     well(g, 23, 150, 42, 24);
     letters(g, WDAYS[t.tm_wday % 7], 26, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
@@ -428,30 +427,36 @@ static void render(GFX &g, const struct tm &t, float subSec)
     letters(g, MONTHS[t.tm_mon % 12], 110, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
     well(g, 153, 150, 52, 24);
-    if (wxSunset >= 0) snprintf(buf, sizeof buf, "%02d%02d", wxSunset / 60, wxSunset % 60);
-    else               strcpy(buf, "----");
-    digits(g, buf, 156, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
-
-    // ---- last departed row: SUNRISE DAYLIGHT COND -------------------------
-    tab(g, "SUNRISE",  52, 180, 56);
-    tab(g, "DAYLIGHT", 118, 180, 60);
-    tab(g, "COND",     186, 180, 44);
-
-    well(g, 23, 192, 58, 22);
-    if (wxSunrise >= 0) snprintf(buf, sizeof buf, "%02d%02d", wxSunrise / 60, wxSunrise % 60);
-    else                strcpy(buf, "----");
-    digits(g, buf, 26, 195, 12, 16, 3, 2, C_AMB, C_AMB_OFF);
-
-    well(g, 89, 192, 58, 22);
     if (wxSunrise >= 0 && wxSunset > wxSunrise) {
         int d = wxSunset - wxSunrise;
         snprintf(buf, sizeof buf, "%02d%02d", d / 60, d % 60);
     } else strcpy(buf, "----");
-    digits(g, buf, 92, 195, 12, 16, 3, 2, C_AMB, C_AMB_OFF);
+    digits(g, buf, 156, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
-    well(g, 155, 192, 50, 22);
-    letters(g, wxValid ? condWord(wxCode) : "---", 158, 195, 14, 16, 3, 2,
-            C_AMB, C_AMB_OFF);
+    // ---- last departed row: sun times | TEMP | DAYLIGHT --------------------
+    // One box carries both sun times, swapping every five seconds, which
+    // keeps a readout of its own for the temperature.
+    bool showRise = ((t.tm_sec / 5) & 1) == 0;
+    tab(g, showRise ? "SUNRISE" : "SUNSET", 52, 180, 56);
+    well(g, 23, 192, 58, 22);
+    int sunVal = showRise ? wxSunrise : wxSunset;
+    if (sunVal >= 0) snprintf(buf, sizeof buf, "%02d%02d", sunVal / 60, sunVal % 60);
+    else             strcpy(buf, "----");
+    digits(g, buf, 26, 195, 12, 16, 3, 2, C_AMB, C_AMB_OFF);
+
+    tab(g, "TEMP", 118, 180, 56);
+    well(g, 89, 192, 58, 22);
+    if (wxValid) snprintf(buf, sizeof buf, "%3d", wxTempF);
+    else         strcpy(buf, " --");
+    digits(g, buf, 93, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
+
+    // the year's remaining daylight is up in the green row now, so this
+    // last box carries the date's day-of-year, which the prop had as a
+    // running counter
+    tab(g, "DAY NO", 184, 180, 60);
+    well(g, 155, 192, 58, 22);
+    snprintf(buf, sizeof buf, "%03d", t.tm_yday + 1);
+    digits(g, buf, 163, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
 
     // ---- the little indicators the prop carries ---------------------------
     // WiFi/NTP state: a lamp on the housing beside the gauge. There is no

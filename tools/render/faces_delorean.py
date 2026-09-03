@@ -87,7 +87,7 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
         c.fillRect(x, y, w, h, PANEL)
         c.drawRect(x, y, w, h, FRAME)
 
-    def flux(x, y, w, h, step, phase):
+    def flux(x, y, w, h, phase):
         c.fillRect(x, y, w, h, K["C_FLUX_BOX"])
         c.drawRect(x, y, w, h, K["C_FLUX_BEZEL"])
         c.drawRect(x + 1, y + 1, w - 2, h - 2, K["C_FLUX_SHADOW"])
@@ -104,23 +104,33 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
         for a in range(3):
             c.fillRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_TERMINAL"])
             c.drawRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_FLUX_BEZEL"])
+        # all three arms live; a pulse runs from the junction outward
         for a in range(3):
-            lit = (a == step)
-            for i in range(3):
-                f = 0.30 + i * 0.28
-                bx = cx + int((ax[a] - cx) * f)
-                by = jy + int((ay[a] - jy) * f)
-                if lit:
+            for i in range(4):
+                pos = 0.22 + i * 0.24
+                bx = cx + int((ax[a] - cx) * pos)
+                by = jy + int((ay[a] - jy) * pos)
+                d = phase - pos
+                if d < 0:
+                    d += 1.0
+                if d < 0.18:
+                    c.fillCircle(bx, by, 5, K["C_FLUX_HALO"])
+                    c.fillCircle(bx, by, 3, K["C_FLUX"])
+                    c.fillCircle(bx, by, 2, K["C_FLUX_HOT"])
+                elif d < 0.36:
                     c.fillCircle(bx, by, 4, K["C_FLUX_HALO"])
+                    c.fillCircle(bx, by, 3, K["C_FLUX"])
+                    c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
+                elif d < 0.58:
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
                 else:
                     c.fillCircle(bx, by, 3, K["C_FLUX_OFF"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_DIM"])
-        jr = 5 if phase < 0.5 else 4
+        jr = 6 if phase < 0.18 else 5
         c.fillCircle(cx, jy, jr + 1, K["C_FLUX_HALO"])
         c.fillCircle(cx, jy, jr, K["C_FLUX"])
-        c.fillCircle(cx, jy, 2, K["C_FLUX_HOT"])
+        c.fillCircle(cx, jy, jr - 3, K["C_FLUX_HOT"])
 
     def gauge(x, y, w, h, pct):
         BGC, INK = K["C_GAUGE_BG"], K["C_GAUGE_INK"]
@@ -170,18 +180,14 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
     c.fillRoundRect(14, 22, 212, 196, 8, CASE)
     c.drawRoundRect(14, 22, 212, 196, 8, FRAME)
 
-    flux(30, 30, 62, 62, ss % 3, 0.0)
+    flux(30, 30, 62, 62, 0.45)
     gauge(104, 32, 92, 58, 86)
     trefoil(207, 66, 4)
-
-    tab("TEMP", 188, 84, 40)
-    well(168, 96, 40, 22)
-    digits("%2d" % temp_f, 174, 99, 13, 16, 3, 4, RED, RED_OFF)
 
     tab("HOUR", 40, 96, 34)
     tab("MIN", 78, 96, 34)
     tab("SEC", 116, 96, 34)
-    tab("YEAR", 156, 96, 40)
+    tab("YEAR", 162, 96, 52)
 
     well(23, 108, 34, 24)
     digits("%02d" % hh, 26, 111, 13, 18, 3, 3, RED, RED_OFF)
@@ -189,13 +195,13 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
     digits("%02d" % mm, 64, 111, 13, 18, 3, 3, RED, RED_OFF)
     well(99, 108, 34, 24)
     digits("%02d" % ss, 102, 111, 13, 18, 3, 3, RED, RED_OFF)
-    well(137, 108, 50, 24)
-    digits("%04d" % year, 140, 111, 10, 18, 3, 2, RED, RED_OFF)
+    well(137, 108, 56, 24)
+    digits("%04d" % year, 141, 111, 11, 18, 3, 2, RED, RED_OFF)
 
     tab("WEEK", 44, 138, 40)
     tab("DAY", 86, 138, 34)
     tab("MONTH", 134, 138, 52)
-    tab("SUNSET", 190, 138, 44)
+    tab("DAYLIGHT", 190, 138, 56)
 
     well(23, 150, 42, 24)
     letters(WDAYS[wday], 26, 153, 11, 18, 3, 2, GRN, GRN_OFF)
@@ -204,19 +210,22 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
     well(107, 150, 42, 24)
     letters(MONTHS[mon], 110, 153, 11, 18, 3, 2, GRN, GRN_OFF)
     well(153, 150, 52, 24)
-    digits("%02d%02d" % (sunset // 60, sunset % 60), 156, 153, 11, 18, 3, 2, GRN, GRN_OFF)
+    dl = sunset - sunrise
+    digits("%02d%02d" % (dl // 60, dl % 60), 156, 153, 11, 18, 3, 2, GRN, GRN_OFF)
 
-    tab("SUNRISE", 52, 180, 56)
-    tab("DAYLIGHT", 118, 180, 60)
-    tab("COND", 186, 180, 44)
-
+    show_rise = (ss // 5) % 2 == 0
+    sun_val = sunrise if show_rise else sunset
+    tab("SUNRISE" if show_rise else "SUNSET", 52, 180, 56)
     well(23, 192, 58, 22)
-    digits("%02d%02d" % (sunrise // 60, sunrise % 60), 26, 195, 12, 16, 3, 2, AMB, AMB_OFF)
+    digits("%02d%02d" % (sun_val // 60, sun_val % 60), 26, 195, 12, 16, 3, 2, AMB, AMB_OFF)
+
+    tab("TEMP", 118, 180, 56)
     well(89, 192, 58, 22)
-    d = sunset - sunrise
-    digits("%02d%02d" % (d // 60, d % 60), 92, 195, 12, 16, 3, 2, AMB, AMB_OFF)
-    well(155, 192, 50, 22)
-    letters("OVC", 158, 195, 14, 16, 3, 2, AMB, AMB_OFF)
+    digits("%3d" % temp_f, 93, 195, 12, 16, 3, 3, AMB, AMB_OFF)
+
+    tab("DAY NO", 184, 180, 60)
+    well(155, 192, 58, 22)
+    digits("%03d" % 244, 163, 195, 12, 16, 3, 3, AMB, AMB_OFF)
 
     c.fillCircle(207, 44, 4, 0x2104)
     c.fillCircle(207, 44, 3, 0x2E68)
