@@ -39,13 +39,26 @@ namespace face_delorean {
 #define C_LABEL     0xFFFF   // white label text on the red tabs
 #define C_TEXT      0xC618
 #define C_DIM       0x7BEF
-#define C_GAUGE_BG  0xF7BE   // the gauge is a cream-faced analog meter
-#define C_GAUGE_INK 0x2104
-#define C_NEEDLE    0xF800
-#define C_FLUX      0xFFE0   // flux tubes, lit
-#define C_FLUX_OFF  0x4200
-#define C_FLUX_BG   0x1082
-#define C_YELLOW    0xFFE0
+// the gauge: a cream-faced moving-coil meter in a black bezel
+#define C_GAUGE_BG    0xF7BE   // the printed face
+#define C_GAUGE_INK   0x1082   // its printing
+#define C_GAUGE_EDGE  0x8410   // the inset line around the face
+#define C_GAUGE_BEZEL 0x0000   // the surround
+#define C_NEEDLE      0x0000   // a black hairline, as on the real instrument
+
+// the flux capacitor: glass tubes over a black box
+#define C_FLUX_BOX    0x0000   // the housing interior
+#define C_FLUX_BEZEL  0x8410   // its bright edge
+#define C_FLUX_SHADOW 0x2104   // the inner shadow just inside that
+#define C_TUBE_WALL   0x39E7   // the thick body of each tube
+#define C_TUBE_CORE   0x6B4D   // glass down the middle, catching light
+#define C_TERMINAL    0x4208   // blocks where the tubes meet the housing
+#define C_FLUX        0xFFE0   // a lit bulb
+#define C_FLUX_HOT    0xFFFF   // its white-hot centre
+#define C_FLUX_HALO   0xFC00   // the warm spill around it
+#define C_FLUX_OFF    0x4A29   // an unlit bulb
+#define C_FLUX_DIM    0x8C51   // its filament, still just visible
+#define C_YELLOW      0xFFE0
 
 uint16_t faceBackground() { return C_BG; }
 bool     faceSmooth()     { return true; }   // the capacitor flickers
@@ -171,76 +184,141 @@ static void well(GFX &g, int x, int y, int w, int h)
 }
 
 // ---- flux capacitor --------------------------------------------------------
-// Three tubes meeting at the centre in a Y, each a run of discs. They light
-// in sequence, one arm at a time, which is the prop's signature flicker.
+// The prop is three thick glass tubes in a Y inside a black box: two rising
+// to the upper corners, one dropping to the bottom centre, meeting at a
+// junction below the middle. Each tube is a wide dark channel with a lighter
+// core (that reads as glass), a bulb at its outer end where it enters a
+// terminal block, and three smaller bulbs stepping down it toward the
+// junction. Firing an arm lights its bulbs from the outside in, which is the
+// chase the prop does.
+//
+// Drawn in that order - box, tube walls, tube cores, terminals, bulbs - so
+// each layer sits over the one behind it, the way the real assembly stacks.
 template <typename GFX>
-static void fluxCapacitor(GFX &g, int cx, int cy, int r, int step)
+static void fluxCapacitor(GFX &g, int x, int y, int w, int h, int step, float phase)
 {
-    g.fillRect(cx - r - 4, cy - r - 4, 2 * r + 8, 2 * r + 8, C_FLUX_BG);
-    g.drawRect(cx - r - 4, cy - r - 4, 2 * r + 8, 2 * r + 8, C_FRAME);
+    // the housing: black box, thin bright bezel, a darker inner shadow
+    g.fillRect(x, y, w, h, C_FLUX_BOX);
+    g.drawRect(x, y, w, h, C_FLUX_BEZEL);
+    g.drawRect(x + 1, y + 1, w - 2, h - 2, C_FLUX_SHADOW);
 
-    // The prop is an upright Y: two arms up and out, one straight down. The
-    // whole assembly sits a little high in its window, as the tubes are
-    // longer above the junction than below.
-    static const float ANG[3] = { 240.0f, 300.0f, 90.0f };
-    int jy = cy + 4;                          // the junction, below centre
+    const int cx = x + w / 2;
+    const int jy = y + h * 42 / 100;          // the junction sits above centre
+    // The prop's Y stands upright: two arms rise to the upper corners and
+    // one drops from the junction to the bottom centre.
+    const int ax[3] = { x + 10,     x + w - 10, cx };
+    const int ay[3] = { y + 11,     y + 11,     y + h - 9 };
+
+    // tube walls first, thick and dark
     for (int a = 0; a < 3; a++) {
-        float rad = ANG[a] * DEG_TO_RAD;
-        float sx = cosf(rad), sy = sinf(rad);
-        bool  lit = (a == step);
-        // the tube itself, dark, then the discs stepping along it
-        int ex = cx + (int)(sx * r), ey = jy + (int)(sy * (a == 2 ? r - 6 : r));
-        g.drawLine(cx, jy, ex, ey, C_FLUX_OFF);
-        for (int i = 1; i <= 3; i++) {
-            int px = cx + (int)(sx * r * i / 3.6f);
-            int py = jy + (int)(sy * (a == 2 ? r - 6 : r) * i / 3.6f);
-            g.fillCircle(px, py, 2, lit ? C_FLUX : C_FLUX_OFF);
+        for (int o = -3; o <= 3; o++)
+            g.drawLine(cx + o, jy, ax[a] + o, ay[a], C_TUBE_WALL);
+    }
+    // then the glass core down the middle of each
+    for (int a = 0; a < 3; a++) {
+        for (int o = -1; o <= 1; o++)
+            g.drawLine(cx + o, jy, ax[a] + o, ay[a], C_TUBE_CORE);
+    }
+
+    // terminal blocks where the tubes meet the housing
+    for (int a = 0; a < 3; a++) {
+        g.fillRect(ax[a] - 5, ay[a] - 4, 10, 8, C_TERMINAL);
+        g.drawRect(ax[a] - 5, ay[a] - 4, 10, 8, C_FLUX_BEZEL);
+    }
+
+    // the bulbs: three down each arm, brightest at the outer end. An arm
+    // that is firing lights all three; the others hold a dim filament.
+    for (int a = 0; a < 3; a++) {
+        bool lit = (a == step);
+        for (int i = 0; i < 3; i++) {
+            // i = 0 nearest the junction, 2 nearest the terminal
+            float f  = 0.30f + i * 0.28f;
+            int   bx = cx + (int)((ax[a] - cx) * f);
+            int   by = jy + (int)((ay[a] - jy) * f);
+            if (lit) {
+                // a warm halo, a bright core, and a white centre: the tubes
+                // glow rather than switching on flat
+                g.fillCircle(bx, by, 4, C_FLUX_HALO);
+                g.fillCircle(bx, by, 3, C_FLUX);
+                g.fillCircle(bx, by, 1, C_FLUX_HOT);
+            } else {
+                g.fillCircle(bx, by, 3, C_FLUX_OFF);
+                g.fillCircle(bx, by, 1, C_FLUX_DIM);
+            }
         }
     }
-    g.fillCircle(cx, jy, 3, C_FLUX);
+
+    // the junction block, always lit, pulsing gently
+    int jr = (phase < 0.5f) ? 5 : 4;
+    g.fillCircle(cx, jy, jr + 1, C_FLUX_HALO);
+    g.fillCircle(cx, jy, jr, C_FLUX);
+    g.fillCircle(cx, jy, 2, C_FLUX_HOT);
 }
 
 // ---- plutonium gauge -------------------------------------------------------
-// A cream-faced analog meter: arc scale, hatch marks, a red needle, and the
-// chamber label under it. Driven by WiFi signal, which is the only thing on
-// this clock that behaves like a level.
+// A moving-coil panel meter: cream face in a black bezel, a printed arc with
+// long ticks at the divisions and short ones between, a red band over the
+// top third, PLUTONIUM printed under the arc, and a hairline black needle
+// pivoting from a hub at the bottom with a short counterweight tail. Driven
+// by WiFi signal, the only thing on this clock that behaves like a level.
+//
+// The needle is drawn as plain one-pixel lines: an anti-aliased line pads a
+// pixel either side, so anything thinner than three pixels comes out the
+// same weight, and a meter needle has to be finer than that to look real.
 template <typename GFX>
 static void gauge(GFX &g, int x, int y, int w, int h, int pct)
 {
-    g.fillRect(x, y, w, h, C_GAUGE_BG);
-    g.drawRect(x, y, w, h, C_FRAME);
+    // bezel, then the meter face inset within it
+    g.fillRect(x, y, w, h, C_GAUGE_BEZEL);
+    g.fillRect(x + 3, y + 3, w - 6, h - 6, C_GAUGE_BG);
+    g.drawRect(x + 3, y + 3, w - 6, h - 6, C_GAUGE_EDGE);
 
-    int cx = x + w / 2, cy = y + h - 6;
-    int r  = h - 18;                       // fits inside the meter face
-    // the scale arc, from 210 to 330 degrees
-    for (int a = 210; a <= 330; a += 4) {
+    const int cx = x + w / 2;
+    const int cy = y + h - 9;               // pivot near the bottom edge
+    const int r  = h - 22;                  // scale radius
+    const int A0 = 208, A1 = 332;           // the swept arc
+
+    // the printed arc itself, drawn densely enough to be a continuous line
+    for (int a = A0; a <= A1; a++) {
         float rad = a * DEG_TO_RAD;
         g.drawPixel(cx + (int)(cosf(rad) * r), cy + (int)(sinf(rad) * r), C_GAUGE_INK);
+        g.drawPixel(cx + (int)(cosf(rad) * (r - 1)), cy + (int)(sinf(rad) * (r - 1)),
+                    C_GAUGE_INK);
     }
-    for (int a = 210; a <= 330; a += 30) {
-        float rad = a * DEG_TO_RAD;
-        g.drawLine(cx + (int)(cosf(rad) * (r - 4)), cy + (int)(sinf(rad) * (r - 4)),
-                   cx + (int)(cosf(rad) * r),       cy + (int)(sinf(rad) * r), C_GAUGE_INK);
-    }
-    // red danger band at the top of the scale
-    for (int a = 310; a <= 330; a += 2) {
-        float rad = a * DEG_TO_RAD;
-        g.drawLine(cx + (int)(cosf(rad) * (r - 3)), cy + (int)(sinf(rad) * (r - 3)),
-                   cx + (int)(cosf(rad) * r),       cy + (int)(sinf(rad) * r), C_RED);
-    }
-    // A fine needle from the pivot, stopping short of the scale. Plain lines
-    // rather than drawWideLine: an anti-aliased line pads a pixel either
-    // side, so anything under 3 px wide comes out the same weight, and a
-    // meter needle wants to be hairline.
-    float na = (210 + pct * 120 / 100) * DEG_TO_RAD;
-    int nx = cx + (int)(cosf(na) * (r - 5)), ny = cy + (int)(sinf(na) * (r - 5));
-    g.drawLine(cx, cy, nx, ny, C_NEEDLE);
-    g.drawLine(cx + 1, cy, nx, ny, C_NEEDLE);      // a touch of body at the pivot
-    g.fillCircle(cx, cy, 2, C_GAUGE_INK);
 
+    // graduations: long every quarter of the sweep, short between
+    for (int i = 0; i <= 12; i++) {
+        int   a   = A0 + (A1 - A0) * i / 12;
+        float rad = a * DEG_TO_RAD;
+        int   len = (i % 3 == 0) ? 6 : 3;
+        g.drawLine(cx + (int)(cosf(rad) * (r - len)), cy + (int)(sinf(rad) * (r - len)),
+                   cx + (int)(cosf(rad) * (r - 1)),   cy + (int)(sinf(rad) * (r - 1)),
+                   C_GAUGE_INK);
+    }
+
+    // the red band over the top of the scale, as a thick arc outside the line
+    for (int a = A0 + (A1 - A0) * 8 / 12; a <= A1; a++) {
+        float rad = a * DEG_TO_RAD;
+        for (int o = 1; o <= 3; o++)
+            g.drawPixel(cx + (int)(cosf(rad) * (r + o)), cy + (int)(sinf(rad) * (r + o)),
+                        C_RED);
+    }
+
+    // the label, printed on the face under the arc
     g.setTextDatum(TC_DATUM);
     g.setTextColor(C_GAUGE_INK, C_GAUGE_BG);
-    g.drawString("PLUTONIUM", cx, y + 3, 1);
+    g.drawString("PLUTONIUM", cx, cy - 11, 1);
+
+    // the needle: a hairline out to just short of the arc, plus a stub of
+    // counterweight on the far side of the pivot
+    float na = (A0 + (A1 - A0) * pct / 100) * DEG_TO_RAD;
+    float ns = sinf(na), nc = cosf(na);
+    g.drawLine(cx, cy, cx + (int)(nc * (r - 4)), cy + (int)(ns * (r - 4)), C_NEEDLE);
+    g.drawLine(cx - (int)(nc * 5), cy - (int)(ns * 5), cx, cy, C_NEEDLE);
+
+    // the hub, a small black boss with a highlight
+    g.fillCircle(cx, cy, 3, C_GAUGE_INK);
+    g.drawPixel(cx - 1, cy - 1, C_GAUGE_BG);
 }
 
 // Radiation trefoil, the little yellow warning by the gauge.
@@ -291,15 +369,16 @@ static void render(GFX &g, const struct tm &t, float subSec)
     g.drawRoundRect(14, 22, 212, 196, 8, C_FRAME);
 
     // ---- flux capacitor and gauge across the top --------------------------
-    int step = ((int)((t.tm_sec + subSec) * 3.0f)) % 3;
-    fluxCapacitor(g, 68, 58, 22, step);
+    float ticks = (t.tm_sec + subSec) * 3.0f;
+    int   step  = ((int)ticks) % 3;
+    fluxCapacitor(g, 30, 30, 62, 62, step, ticks - (int)ticks);
 
     int rssi = WiFi.RSSI();
     int sig  = (WiFi.status() == WL_CONNECTED) ? 2 * (rssi + 100) : 0;
     if (sig < 0)   sig = 0;
     if (sig > 100) sig = 100;
-    gauge(g, 118, 32, 74, 46, sig);
-    trefoil(g, 108, 88, 4);
+    gauge(g, 104, 32, 92, 58, sig);
+    trefoil(g, 207, 66, 4);
 
     // ---- TEMP, at the right, as the original has it -----------------------
     tab(g, "TEMP", 188, 84, 40);
@@ -375,11 +454,10 @@ static void render(GFX &g, const struct tm &t, float subSec)
             C_AMB, C_AMB_OFF);
 
     // ---- the little indicators the prop carries ---------------------------
-    g.setTextDatum(TL_DATUM);
-    g.setTextColor(C_DIM, C_CASE);
-    g.drawString("BT", 24, 84, 1);
-    g.setTextColor(statusCol, C_CASE);
-    g.fillCircle(38, 87, 2, statusCol);
+    // WiFi/NTP state: a lamp on the housing beside the gauge. There is no
+    // room for a caption up here, and the prop has unlabelled lamps anyway.
+    g.fillCircle(207, 44, 4, 0x2104);
+    g.fillCircle(207, 44, 3, statusCol);
     g.setTextDatum(TC_DATUM);
     g.setTextColor(C_TEXT, C_BG);
     g.drawString("OUTATIME", 120, 8, 1);
@@ -394,7 +472,7 @@ static int faceDirty(const struct tm &t, float, const struct tm &pt, float,
                      DirtyRect *out, int max)
 {
     int n = 0;
-    if (max > 0) out[n++] = { 68 - 30, 58 - 30, 60, 60 };
+    if (max > 0) out[n++] = { 30, 30, 62, 62 };          // the capacitor box
     if (t.tm_sec != pt.tm_sec && n < max) out[n++] = { 20, 92, 200, 126 };
     return n;
 }

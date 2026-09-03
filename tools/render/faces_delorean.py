@@ -87,49 +87,74 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
         c.fillRect(x, y, w, h, PANEL)
         c.drawRect(x, y, w, h, FRAME)
 
-    def flux(cx, cy, r, step):
-        c.fillRect(cx - r - 4, cy - r - 4, 2 * r + 8, 2 * r + 8, K["C_FLUX_BG"])
-        c.drawRect(cx - r - 4, cy - r - 4, 2 * r + 8, 2 * r + 8, FRAME)
-        jy = cy + 4
-        for a, ang in enumerate((240.0, 300.0, 90.0)):
-            rad = math.radians(ang)
-            sx, sy = math.cos(rad), math.sin(rad)
+    def flux(x, y, w, h, step, phase):
+        c.fillRect(x, y, w, h, K["C_FLUX_BOX"])
+        c.drawRect(x, y, w, h, K["C_FLUX_BEZEL"])
+        c.drawRect(x + 1, y + 1, w - 2, h - 2, K["C_FLUX_SHADOW"])
+        cx = x + w // 2
+        jy = y + h * 42 // 100
+        ax = [x + 10, x + w - 10, cx]
+        ay = [y + 11, y + 11, y + h - 9]
+        for a in range(3):
+            for o in range(-3, 4):
+                c.drawLine(cx + o, jy, ax[a] + o, ay[a], K["C_TUBE_WALL"])
+        for a in range(3):
+            for o in range(-1, 2):
+                c.drawLine(cx + o, jy, ax[a] + o, ay[a], K["C_TUBE_CORE"])
+        for a in range(3):
+            c.fillRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_TERMINAL"])
+            c.drawRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_FLUX_BEZEL"])
+        for a in range(3):
             lit = (a == step)
-            reach = r - 6 if a == 2 else r
-            ex, ey = cx + int(sx * r), jy + int(sy * reach)
-            c.drawLine(cx, jy, ex, ey, K["C_FLUX_OFF"])
-            for i in range(1, 4):
-                px = cx + int(sx * r * i / 3.6)
-                py = jy + int(sy * reach * i / 3.6)
-                c.fillCircle(px, py, 2, K["C_FLUX"] if lit else K["C_FLUX_OFF"])
-        c.fillCircle(cx, jy, 3, K["C_FLUX"])
+            for i in range(3):
+                f = 0.30 + i * 0.28
+                bx = cx + int((ax[a] - cx) * f)
+                by = jy + int((ay[a] - jy) * f)
+                if lit:
+                    c.fillCircle(bx, by, 4, K["C_FLUX_HALO"])
+                    c.fillCircle(bx, by, 3, K["C_FLUX"])
+                    c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
+                else:
+                    c.fillCircle(bx, by, 3, K["C_FLUX_OFF"])
+                    c.fillCircle(bx, by, 1, K["C_FLUX_DIM"])
+        jr = 5 if phase < 0.5 else 4
+        c.fillCircle(cx, jy, jr + 1, K["C_FLUX_HALO"])
+        c.fillCircle(cx, jy, jr, K["C_FLUX"])
+        c.fillCircle(cx, jy, 2, K["C_FLUX_HOT"])
 
     def gauge(x, y, w, h, pct):
         BGC, INK = K["C_GAUGE_BG"], K["C_GAUGE_INK"]
-        c.fillRect(x, y, w, h, BGC)
-        c.drawRect(x, y, w, h, FRAME)
-        cx, cy = x + w // 2, y + h - 6
-        r = h - 18
-        for a in range(210, 331, 4):
+        c.fillRect(x, y, w, h, K["C_GAUGE_BEZEL"])
+        c.fillRect(x + 3, y + 3, w - 6, h - 6, BGC)
+        c.drawRect(x + 3, y + 3, w - 6, h - 6, K["C_GAUGE_EDGE"])
+        cx, cy = x + w // 2, y + h - 9
+        r = h - 22
+        A0, A1 = 208, 332
+        for a in range(A0, A1 + 1):
             rad = math.radians(a)
             c.drawPixel(cx + int(math.cos(rad) * r), cy + int(math.sin(rad) * r), INK)
-        for a in range(210, 331, 30):
+            c.drawPixel(cx + int(math.cos(rad) * (r - 1)),
+                        cy + int(math.sin(rad) * (r - 1)), INK)
+        for i in range(13):
+            a = A0 + (A1 - A0) * i // 12
             rad = math.radians(a)
-            c.drawLine(cx + int(math.cos(rad) * (r - 4)), cy + int(math.sin(rad) * (r - 4)),
-                       cx + int(math.cos(rad) * r), cy + int(math.sin(rad) * r), INK)
-        for a in range(310, 331, 2):
+            ln = 6 if i % 3 == 0 else 3
+            c.drawLine(cx + int(math.cos(rad) * (r - ln)), cy + int(math.sin(rad) * (r - ln)),
+                       cx + int(math.cos(rad) * (r - 1)), cy + int(math.sin(rad) * (r - 1)), INK)
+        for a in range(A0 + (A1 - A0) * 8 // 12, A1 + 1):
             rad = math.radians(a)
-            c.drawLine(cx + int(math.cos(rad) * (r - 3)), cy + int(math.sin(rad) * (r - 3)),
-                       cx + int(math.cos(rad) * r), cy + int(math.sin(rad) * r), RED)
-        na = math.radians(210 + pct * 120 / 100)
-        nx = cx + int(math.cos(na) * (r - 5))
-        ny = cy + int(math.sin(na) * (r - 5))
-        c.drawLine(cx, cy, nx, ny, K["C_NEEDLE"])
-        c.drawLine(cx + 1, cy, nx, ny, K["C_NEEDLE"])
-        c.fillCircle(cx, cy, 2, INK)
+            for o in (1, 2, 3):
+                c.drawPixel(cx + int(math.cos(rad) * (r + o)),
+                            cy + int(math.sin(rad) * (r + o)), RED)
         c.setTextDatum(TC)
         c.setTextColor(INK, BGC)
-        c.drawString("PLUTONIUM", cx, y + 3, 1)
+        c.drawString("PLUTONIUM", cx, cy - 11, 1)
+        na = math.radians(A0 + (A1 - A0) * pct / 100)
+        ns, nc = math.sin(na), math.cos(na)
+        c.drawLine(cx, cy, cx + int(nc * (r - 4)), cy + int(ns * (r - 4)), K["C_NEEDLE"])
+        c.drawLine(cx - int(nc * 5), cy - int(ns * 5), cx, cy, K["C_NEEDLE"])
+        c.fillCircle(cx, cy, 3, INK)
+        c.drawPixel(cx - 1, cy - 1, BGC)
 
     def trefoil(cx, cy, r):
         Y = K["C_YELLOW"]
@@ -145,9 +170,9 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
     c.fillRoundRect(14, 22, 212, 196, 8, CASE)
     c.drawRoundRect(14, 22, 212, 196, 8, FRAME)
 
-    flux(68, 58, 22, ss % 3)
-    gauge(118, 32, 74, 46, 86)
-    trefoil(108, 88, 4)
+    flux(30, 30, 62, 62, ss % 3, 0.0)
+    gauge(104, 32, 92, 58, 86)
+    trefoil(207, 66, 4)
 
     tab("TEMP", 188, 84, 40)
     well(168, 96, 40, 22)
@@ -193,10 +218,8 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
     well(155, 192, 50, 22)
     letters("OVC", 158, 195, 14, 16, 3, 2, AMB, AMB_OFF)
 
-    c.setTextDatum(TL)
-    c.setTextColor(K["C_DIM"], CASE)
-    c.drawString("BT", 24, 84, 1)
-    c.fillCircle(38, 87, 2, 0x2E68)
+    c.fillCircle(207, 44, 4, 0x2104)
+    c.fillCircle(207, 44, 3, 0x2E68)
     c.setTextDatum(TC)
     c.setTextColor(K["C_TEXT"], K["C_BG"])
     c.drawString("OUTATIME", 120, 8, 1)
