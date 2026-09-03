@@ -14,7 +14,7 @@
 //     flux capacitor            plutonium gauge (WiFi signal)
 //     HOUR  MIN  SEC  YEAR
 //     WEEK  DAY  MONTH (spelled)  DAYLIGHT
-//     SUNRISE/SUNSET (alternating)  TEMP  DAY NO
+//     SUNRISE/SUNSET (alternating)  TEMP
 //
 //  The flux capacitor charges: all three arms are live and pulses of light
 //  run from the junction out to the terminals. Nothing here is a bitmap;
@@ -372,10 +372,12 @@ static void render(GFX &g, const struct tm &t, float subSec)
 {
     char buf[16];
 
-    g.fillScreen(C_BG);
-    // the dark brushed housing the readouts are set into
-    g.fillRoundRect(14, 22, 212, 196, 8, C_CASE);
-    g.drawRoundRect(14, 22, 212, 196, 8, C_FRAME);
+    // The housing fills the glass: on a round display a rounded rectangle
+    // reads as a box floating on black, so the panel is the whole face and
+    // its edging follows the rim.
+    g.fillScreen(C_CASE);
+    g.drawSmoothCircle(120, 120, 119, C_FRAME, C_CASE);
+    g.drawSmoothCircle(120, 120, 117, C_FRAME, C_CASE);
 
     // ---- flux capacitor and gauge across the top --------------------------
     float ticks = (t.tm_sec + subSec) / 0.7f;      // one pulse every 0.7 s
@@ -389,74 +391,66 @@ static void render(GFX &g, const struct tm &t, float subSec)
     trefoil(g, 207, 66, 4);
 
     // ---- destination row: HOUR MIN SEC YEAR -------------------------------
-    tab(g, "HOUR", 40,  96, 34);
-    tab(g, "MIN",  78,  96, 34);
-    tab(g, "SEC",  116, 96, 34);
-    tab(g, "YEAR", 162, 96, 52);
+    tab(g, "HOUR", 52,  96, 34);
+    tab(g, "MIN",  90,  96, 34);
+    tab(g, "SEC",  128, 96, 34);
+    tab(g, "YEAR", 177, 96, 52);
 
-    well(g, 23, 108, 34, 24);
+    well(g, 35, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_hour);
-    digits(g, buf, 26, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
+    digits(g, buf, 38, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
-    well(g, 61, 108, 34, 24);
+    well(g, 73, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_min);
-    digits(g, buf, 64, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
+    digits(g, buf, 76, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
-    well(g, 99, 108, 34, 24);
+    well(g, 111, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_sec);
-    digits(g, buf, 102, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
+    digits(g, buf, 114, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
-    well(g, 137, 108, 56, 24);
+    well(g, 149, 108, 56, 24);
     snprintf(buf, sizeof buf, "%04d", t.tm_year + 1900);
-    digits(g, buf, 141, 111, 11, 18, 3, 2, C_RED, C_RED_OFF);
+    digits(g, buf, 153, 111, 11, 18, 3, 2, C_RED, C_RED_OFF);
 
     // ---- present row: WEEK DAY MONTH (spelled) SUNSET ---------------------
-    tab(g, "WEEK",  44,  138, 40);
-    tab(g, "DAY",   86,  138, 34);
-    tab(g, "MONTH", 134, 138, 52);
-    tab(g, "DAYLIGHT", 190, 138, 56);
+    tab(g, "WEEK",  50,  138, 42);
+    tab(g, "DAY",   92,  138, 34);
+    tab(g, "MONTH", 134, 138, 42);
+    tab(g, "DAYLIGHT", 185, 138, 56);
 
-    well(g, 23, 150, 42, 24);
-    letters(g, WDAYS[t.tm_wday % 7], 26, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
+    well(g, 29, 150, 42, 24);
+    letters(g, WDAYS[t.tm_wday % 7], 32, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
-    well(g, 69, 150, 34, 24);
+    well(g, 75, 150, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_mday);
-    digits(g, buf, 72, 153, 13, 18, 3, 3, C_GRN, C_GRN_OFF);
+    digits(g, buf, 78, 153, 13, 18, 3, 3, C_GRN, C_GRN_OFF);
 
-    well(g, 107, 150, 42, 24);
-    letters(g, MONTHS[t.tm_mon % 12], 110, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
+    well(g, 113, 150, 42, 24);
+    letters(g, MONTHS[t.tm_mon % 12], 116, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
-    well(g, 153, 150, 52, 24);
+    well(g, 159, 150, 52, 24);
     if (wxSunrise >= 0 && wxSunset > wxSunrise) {
         int d = wxSunset - wxSunrise;
         snprintf(buf, sizeof buf, "%02d%02d", d / 60, d % 60);
     } else strcpy(buf, "----");
-    digits(g, buf, 156, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
+    digits(g, buf, 162, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
     // ---- last departed row: sun times | TEMP | DAYLIGHT --------------------
     // One box carries both sun times, swapping every five seconds, which
     // keeps a readout of its own for the temperature.
     bool showRise = ((t.tm_sec / 5) & 1) == 0;
-    tab(g, showRise ? "SUNRISE" : "SUNSET", 52, 180, 56);
-    well(g, 23, 192, 58, 22);
+    tab(g, showRise ? "SUNRISE" : "SUNSET", 84, 180, 58);
+    well(g, 55, 192, 58, 22);
     int sunVal = showRise ? wxSunrise : wxSunset;
     if (sunVal >= 0) snprintf(buf, sizeof buf, "%02d%02d", sunVal / 60, sunVal % 60);
     else             strcpy(buf, "----");
-    digits(g, buf, 26, 195, 12, 16, 3, 2, C_AMB, C_AMB_OFF);
+    digits(g, buf, 58, 195, 12, 16, 3, 2, C_AMB, C_AMB_OFF);
 
-    tab(g, "TEMP", 118, 180, 56);
-    well(g, 89, 192, 58, 22);
+    tab(g, "TEMP", 156, 180, 58);
+    well(g, 127, 192, 58, 22);
     if (wxValid) snprintf(buf, sizeof buf, "%3d", wxTempF);
     else         strcpy(buf, " --");
-    digits(g, buf, 93, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
-
-    // the year's remaining daylight is up in the green row now, so this
-    // last box carries the date's day-of-year, which the prop had as a
-    // running counter
-    tab(g, "DAY NO", 184, 180, 60);
-    well(g, 155, 192, 58, 22);
-    snprintf(buf, sizeof buf, "%03d", t.tm_yday + 1);
-    digits(g, buf, 163, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
+    digits(g, buf, 131, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
 
     // ---- the little indicators the prop carries ---------------------------
     // WiFi/NTP state: a lamp on the housing beside the gauge. There is no
