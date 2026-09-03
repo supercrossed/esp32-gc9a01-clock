@@ -231,22 +231,32 @@ static void fluxCapacitor(GFX &g, int x, int y, int w, int h, float phase)
     // brightens as the pulse reaches it and fades behind it. That is the
     // charging flow, rather than one arm at a time.
     //
-    // `phase` runs 0..1 over one pulse. A bulb at position p along its arm
-    // is brightest when the pulse is at p, and its brightness falls off with
-    // the distance between them - so the light appears to move outward.
+    // `phase` runs 0..1 over one cycle, but the pulse only travels during
+    // the first TRAVEL of it; the remainder is a dark beat before the next
+    // one leaves. Without that gap the arms never fully go out and the
+    // effect reads as a continuous ripple rather than discrete pulses.
+    const float TRAVEL = 0.72f;
+    // How far along the arms the pulse has reached, or -1 during the pause.
+    // It starts at the innermost bulb rather than at zero, so the first
+    // bulb lights the instant the pulse leaves the junction.
+    const float FIRST = 0.22f;
+    float head = (phase < TRAVEL)
+               ? FIRST + (1.0f - FIRST) * (phase / TRAVEL)
+               : -1.0f;
+
     for (int a = 0; a < 3; a++) {
         for (int i = 0; i < 4; i++) {
             float p  = 0.22f + i * 0.24f;         // where this bulb sits, 0..1
             int   bx = cx + (int)((ax[a] - cx) * p);
             int   by = jy + (int)((ay[a] - jy) * p);
 
-            float d = phase - p;                   // how far the pulse is past it
-            if (d < 0) d += 1.0f;                  // the pulse wraps around
-            // a short bright head with a tail behind it
+            // distance behind the head; negative means it has not arrived
+            float d = (head < 0) ? 9.0f : (head - p);
             int level;
-            if      (d < 0.18f) level = 3;         // the pulse is on this bulb
-            else if (d < 0.36f) level = 2;         // just behind it
-            else if (d < 0.58f) level = 1;         // fading
+            if      (d < 0)     level = 0;         // the pulse is not here yet
+            else if (d < 0.16f) level = 3;         // the head is on this bulb
+            else if (d < 0.32f) level = 2;         // just behind it
+            else if (d < 0.50f) level = 1;         // fading
             else                level = 0;         // idle
 
             switch (level) {
@@ -272,8 +282,9 @@ static void fluxCapacitor(GFX &g, int x, int y, int w, int h, float phase)
         }
     }
 
-    // The junction, where every pulse is born: brightest as one leaves.
-    int jr = (phase < 0.18f) ? 6 : 5;
+    // The junction, where every pulse is born: it flares as one leaves and
+    // settles back during the pause.
+    int jr = (phase < 0.12f) ? 6 : 5;
     g.fillCircle(cx, jy, jr + 1, C_FLUX_HALO);
     g.fillCircle(cx, jy, jr, C_FLUX);
     g.fillCircle(cx, jy, jr - 3, C_FLUX_HOT);
@@ -380,7 +391,9 @@ static void render(GFX &g, const struct tm &t, float subSec)
     g.drawSmoothCircle(120, 120, 117, C_FRAME, C_CASE);
 
     // ---- flux capacitor and gauge across the top --------------------------
-    float ticks = (t.tm_sec + subSec) / 0.7f;      // one pulse every 0.7 s
+    // One pulse a second: the sweep itself takes about 0.7 s and the rest
+    // is the beat between them.
+    float ticks = (t.tm_sec + subSec) / 1.0f;
     fluxCapacitor(g, 30, 30, 62, 62, ticks - (int)ticks);
 
     int rssi = WiFi.RSSI();

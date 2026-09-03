@@ -104,30 +104,34 @@ def face_delorean(c, hh, mm, ss, mday, mon, year, wday, temp_f, sunrise, sunset)
         for a in range(3):
             c.fillRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_TERMINAL"])
             c.drawRect(ax[a] - 5, ay[a] - 4, 10, 8, K["C_FLUX_BEZEL"])
-        # all three arms live; a pulse runs from the junction outward
+        # all three arms live; a pulse runs from the junction outward, then
+        # a dark beat before the next one leaves
+        TRAVEL, FIRST = 0.72, 0.22
+        head = FIRST + (1.0 - FIRST) * (phase / TRAVEL) if phase < TRAVEL else -1.0
         for a in range(3):
             for i in range(4):
                 pos = 0.22 + i * 0.24
                 bx = cx + int((ax[a] - cx) * pos)
                 by = jy + int((ay[a] - jy) * pos)
-                d = phase - pos
+                d = 9.0 if head < 0 else head - pos
                 if d < 0:
-                    d += 1.0
-                if d < 0.18:
+                    c.fillCircle(bx, by, 3, K["C_FLUX_OFF"])
+                    c.fillCircle(bx, by, 1, K["C_FLUX_DIM"])
+                elif d < 0.16:
                     c.fillCircle(bx, by, 5, K["C_FLUX_HALO"])
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 2, K["C_FLUX_HOT"])
-                elif d < 0.36:
+                elif d < 0.32:
                     c.fillCircle(bx, by, 4, K["C_FLUX_HALO"])
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
-                elif d < 0.58:
+                elif d < 0.50:
                     c.fillCircle(bx, by, 3, K["C_FLUX"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_HOT"])
                 else:
                     c.fillCircle(bx, by, 3, K["C_FLUX_OFF"])
                     c.fillCircle(bx, by, 1, K["C_FLUX_DIM"])
-        jr = 6 if phase < 0.18 else 5
+        jr = 6 if phase < 0.12 else 5
         c.fillCircle(cx, jy, jr + 1, K["C_FLUX_HALO"])
         c.fillCircle(cx, jy, jr, K["C_FLUX"])
         c.fillCircle(cx, jy, jr - 3, K["C_FLUX_HOT"])
