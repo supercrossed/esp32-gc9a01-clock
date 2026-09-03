@@ -94,7 +94,8 @@ inline int handBoxes(int cx, int cy, float back, float len, float ang,
 // One per faces/*.cpp.
 extern const FaceVTable FACE_DEFAULT, FACE_CASIO, FACE_MOSAIC,
                         FACE_RETRO, FACE_DOTMATRIX, FACE_WORD, FACE_PULSAR,
-                        FACE_PCB, FACE_CLASSIC, FACE_MODERN;
+                        FACE_PCB, FACE_CLASSIC, FACE_MODERN, FACE_PANEL,
+                        FACE_DELOREAN;
 
 // The active face, and how long each is shown before rotating.
 extern const FaceVTable *activeFace;

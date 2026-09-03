@@ -16,6 +16,8 @@ from canvas import Canvas, TL, TC, TR, ML, MC, MR
 import faces_lcd
 import faces_pcb
 import faces_analog
+import faces_panel
+import faces_delorean
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.normpath(os.path.join(HERE, "..", "..", "src", "faces"))
@@ -325,6 +327,13 @@ FACES = {
     "pulsar": face_pulsar,
     "pcb": lambda c: faces_pcb.face_pcb(c, HH, MM, SS),
     "classic": lambda c: faces_analog.face_classic(c, HH, MM, SS, MDAY),
+    "delorean": lambda c: faces_delorean.face_delorean(c, HH, MM, SS, MDAY, MON,
+                                                       YEAR, WDAY, TEMP_F,
+                                                       SUNRISE, SUNSET),
+    "panel": lambda c: faces_panel.face_panel(c, HH, MM, SS, MDAY, MON, WDAY,
+                                              TEMP_F, SUNRISE, SUNSET, night=False),
+    "panel-night": lambda c: faces_panel.face_panel(c, HH, MM, SS, MDAY, MON, WDAY,
+                                                    TEMP_F, SUNRISE, SUNSET, night=True),
     "modern": lambda c: faces_analog.face_modern(c, HH, MM, SS, MDAY, WDAY,
                                                  TEMP_F, IS_DAY, SUNSET),
     "word": face_word,
