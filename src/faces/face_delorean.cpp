@@ -12,8 +12,8 @@
 //  readout gives way to it:
 //
 //     flux capacitor            plutonium gauge (WiFi signal)
-//     HOUR  MIN  SEC  YEAR
-//     WEEK  DAY  MONTH (spelled)  DAYLIGHT
+//     HOUR  MIN  SEC
+//     WEEK  DAY  MONTH (spelled)  YEAR
 //     SUNRISE/SUNSET (alternating)  TEMP
 //
 //  The flux capacitor charges: all three arms are live and pulses of light
@@ -391,32 +391,27 @@ static void render(GFX &g, const struct tm &t, float subSec)
     trefoil(g, 207, 66, 4);
 
     // ---- destination row: HOUR MIN SEC YEAR -------------------------------
-    tab(g, "HOUR", 52,  96, 34);
-    tab(g, "MIN",  90,  96, 34);
-    tab(g, "SEC",  128, 96, 34);
-    tab(g, "YEAR", 177, 96, 52);
+    tab(g, "HOUR", 82,  96, 34);
+    tab(g, "MIN",  120, 96, 34);
+    tab(g, "SEC",  158, 96, 34);
 
-    well(g, 35, 108, 34, 24);
+    well(g, 65, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_hour);
-    digits(g, buf, 38, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
+    digits(g, buf, 68, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
-    well(g, 73, 108, 34, 24);
+    well(g, 103, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_min);
-    digits(g, buf, 76, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
+    digits(g, buf, 106, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
-    well(g, 111, 108, 34, 24);
+    well(g, 141, 108, 34, 24);
     snprintf(buf, sizeof buf, "%02d", t.tm_sec);
-    digits(g, buf, 114, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
-
-    well(g, 149, 108, 56, 24);
-    snprintf(buf, sizeof buf, "%04d", t.tm_year + 1900);
-    digits(g, buf, 153, 111, 11, 18, 3, 2, C_RED, C_RED_OFF);
+    digits(g, buf, 144, 111, 13, 18, 3, 3, C_RED, C_RED_OFF);
 
     // ---- present row: WEEK DAY MONTH (spelled) SUNSET ---------------------
     tab(g, "WEEK",  50,  138, 42);
     tab(g, "DAY",   92,  138, 34);
     tab(g, "MONTH", 134, 138, 42);
-    tab(g, "DAYLIGHT", 185, 138, 56);
+    tab(g, "YEAR", 185, 138, 56);
 
     well(g, 29, 150, 42, 24);
     letters(g, WDAYS[t.tm_wday % 7], 32, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
@@ -429,10 +424,7 @@ static void render(GFX &g, const struct tm &t, float subSec)
     letters(g, MONTHS[t.tm_mon % 12], 116, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
     well(g, 159, 150, 52, 24);
-    if (wxSunrise >= 0 && wxSunset > wxSunrise) {
-        int d = wxSunset - wxSunrise;
-        snprintf(buf, sizeof buf, "%02d%02d", d / 60, d % 60);
-    } else strcpy(buf, "----");
+    snprintf(buf, sizeof buf, "%04d", t.tm_year + 1900);
     digits(g, buf, 162, 153, 11, 18, 3, 2, C_GRN, C_GRN_OFF);
 
     // ---- last departed row: sun times | TEMP | DAYLIGHT --------------------
@@ -446,11 +438,19 @@ static void render(GFX &g, const struct tm &t, float subSec)
     else             strcpy(buf, "----");
     digits(g, buf, 58, 195, 12, 16, 3, 2, C_AMB, C_AMB_OFF);
 
-    tab(g, "TEMP", 156, 180, 58);
+    // While the weather has not arrived, this box reports which stage is
+    // failing rather than showing bare dashes: E1 no WiFi, E2/E3 the fetch,
+    // E4/E5 the reply, E6 the location could not be resolved. Without this
+    // a blank readout is indistinguishable from a broken one.
+    tab(g, wxValid ? "TEMP" : "WX ERR", 156, 180, 58);
     well(g, 127, 192, 58, 22);
-    if (wxValid) snprintf(buf, sizeof buf, "%3d", wxTempF);
-    else         strcpy(buf, " --");
-    digits(g, buf, 131, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
+    if (wxValid) {
+        snprintf(buf, sizeof buf, "%3d", wxTempF);
+        digits(g, buf, 131, 195, 12, 16, 3, 3, C_AMB, C_AMB_OFF);
+    } else {
+        char e[4] = { 'E', (char)('0' + (wxErr % 10)), 0, 0 };
+        letters(g, e, 140, 195, 14, 16, 3, 3, C_AMB, C_AMB_OFF);
+    }
 
     // ---- the little indicators the prop carries ---------------------------
     // WiFi/NTP state: a lamp on the housing beside the gauge. There is no
