@@ -86,6 +86,34 @@ void Canvas::pRing(int32_t cx, int32_t cy, int32_t rq, int32_t tq, uint16_t c, u
     if (x0 < ox) x0 = ox;
     if (x1 > ox + w - 1) x1 = ox + w - 1;
     if (y0 > y1 || x0 > x1) return;
+
+    // The clip above is a bounding-box test, and a ring's bounding box is the
+    // whole disc. A big ring - the rim circles are r=231 on a 466 px panel -
+    // therefore overlaps almost every window, including ones the stroke does
+    // not cross at all, and the loop below then walks every pixel of them
+    // doing squared-distance work for nothing. Reject those windows here by
+    // asking whether the annulus actually reaches the window: if the nearest
+    // corner is outside the ring, or the farthest corner inside it, no pixel
+    // in this window can land on the stroke.
+    //
+    // The test is written in terms of d2 and r2 exactly as the loop is, rather
+    // than in true distance: the loop's coverage comes from the linearised
+    // |d2 - r2| / (2 rq), which is not the same surface as |d - r|, and a
+    // bound derived from real distance rejects windows the loop would in fact
+    // have painted.
+    {
+        int64_t r2sq  = (int64_t)rq * rq;
+        int64_t band  = (int64_t)(tq / 2 + 2) * (2 * rq);   // |d2 - r2| the loop accepts
+        int32_t ndx = cx < x0 ? x0 - cx : (cx > x1 ? cx - x1 : 0);
+        int32_t ndy = cy < y0 ? y0 - cy : (cy > y1 ? cy - y1 : 0);
+        int32_t fdx = (cx - x0 > x1 - cx) ? cx - x0 : x1 - cx;
+        int32_t fdy = (cy - y0 > y1 - cy) ? cy - y0 : y1 - cy;
+        int64_t near2 = 16LL * ((int64_t)ndx * ndx + (int64_t)ndy * ndy);
+        int64_t far2  = 16LL * ((int64_t)fdx * fdx + (int64_t)fdy * fdy);
+        if (near2 - r2sq > band) return;    // whole window outside the stroke
+        if (r2sq - far2  > band) return;    // whole window inside it
+    }
+
     int64_t r2   = (int64_t)rq * rq;
     int32_t half = tq / 2 + 2;                   // quarter px, to the zero-coverage contour
     for (int32_t y = y0; y <= y1; y++) {
