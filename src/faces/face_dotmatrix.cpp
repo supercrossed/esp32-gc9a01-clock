@@ -36,10 +36,24 @@ namespace face_dotmatrix {
 // 132 px AND the dots grow, because the pitch can go from 8 to 12.
 //
 //   11 cols = 5 + gap + 5      15 rows = 7 + gap + 7
-#define COLS   11
-#define ROWS   15
+//
+// The DIGITS occupy that 11x15 block, but the dot field itself runs to the
+// edge of the glass. A real dot-matrix watch is a full panel of emitters with
+// the numerals lit somewhere inside it - stopping the dormant dots at the
+// edge of the digit block leaves a visible rectangle on a round dial, which
+// reads as a sticker rather than a display. 21 columns is the first odd count
+// whose half-span (126 px) clears the 114 px cull radius, so the field fills
+// the dial and the circle does the cropping.
+#define DIG_COLS 11
+#define DIG_ROWS 15
+#define COLS   21
+#define ROWS   21
 #define PITCH  12          // centre-to-centre
 #define DOT_R   4          // drawn radius
+
+// Where the digit block sits inside the larger field.
+#define DIG_C0 ((COLS - DIG_COLS) / 2)
+#define DIG_R0 ((ROWS - DIG_ROWS) / 2)
 
 #define GRID_W (COLS * PITCH)
 #define GRID_H (ROWS * PITCH)
@@ -66,10 +80,12 @@ static const uint8_t FONT[10][ROWS] = {
 };
 
 // Two digits per row, one blank column between; one blank row between rows.
-#define DL_C  0            // left digit column
-#define DR_C  6            // right digit column
-#define TOP_R 0            // hours row
-#define BOT_R 8            // minutes row
+// Offset into the full field so the numerals stay centred on the dial while
+// the dormant dots run past them to the glass.
+#define DL_C  (DIG_C0 + 0) // left digit column
+#define DR_C  (DIG_C0 + 6) // right digit column
+#define TOP_R (DIG_R0 + 0) // hours row
+#define BOT_R (DIG_R0 + 8) // minutes row
 
 static void stamp(uint8_t *m, int d, int c0, int r0)
 {
@@ -96,8 +112,8 @@ static void render(GFX &g, const struct tm &t, float subSec)
     // separator: two dots on the blank row between hours and minutes,
     // blinking on the second
     if (t.tm_sec & 1) {
-        on[7 * COLS + 2] = 1;
-        on[7 * COLS + 8] = 1;
+        on[(DIG_R0 + 7) * COLS + DIG_C0 + 2] = 1;
+        on[(DIG_R0 + 7) * COLS + DIG_C0 + 8] = 1;
     }
 
     g.fillScreen(C_GLASS);
