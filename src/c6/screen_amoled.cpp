@@ -50,6 +50,50 @@ void screenInit()
     amoled::setBrightness(255);
 }
 
+// ---- burn-in mitigation ----------------------------------------------------
+// An AMOLED ages where it is lit, and this is a clock: several faces hold
+// bright elements in one place for the three hours between rotations - the
+// dot-matrix field, the casio segments, the delorean readouts. Left alone
+// those would eventually shadow.
+//
+// So the whole image creeps around a small box, a pixel at a time, on a slow
+// cycle. At this size and rate it is not visible in use - a pixel every few
+// minutes, never more than two from centre - but it keeps any given emitter
+// from carrying the same bright edge for hours.
+//
+// It costs nothing per pixel: the offset is applied to the origin the canvas
+// is attached at, so the face draws itself shifted rather than being moved
+// afterwards. The pushed rectangle is unchanged, so nothing downstream - the
+// rotation, the byte swap, the DMA - has to know about it.
+static const uint32_t SHIFT_MS = 3UL * 60UL * 1000UL;  // one step every 3 min
+static int      shiftX = 0, shiftY = 0;
+static uint32_t lastShift = 0;
+
+// A closed tour around the edge of the box, rather than a random walk: a
+// walk revisits the middle far more often than the corners, which is where
+// the wear it is meant to spread would then concentrate. This ring visits
+// all sixteen positions equally, and every step - including the wrap from
+// the last back to the first - moves exactly one pixel, so the creep is
+// never a visible jump.
+static void stepShift()
+{
+    if (millis() - lastShift < SHIFT_MS) return;
+    lastShift = millis();
+
+    static const int8_t TOUR[][2] = {
+        {-2, -2}, {-1, -2}, { 0, -2}, { 1, -2}, { 2, -2}, { 2, -1},
+        { 2,  0}, { 2,  1}, { 2,  2}, { 1,  2}, { 0,  2}, {-1,  2},
+        {-2,  2}, {-2,  1}, {-2,  0}, {-2, -1},
+    };
+    static const int N = (int)(sizeof TOUR / sizeof TOUR[0]);
+    static int step = 0;
+    step = (step + 1) % N;
+    shiftX = TOUR[step][0];
+    shiftY = TOUR[step][1];
+    // The dirty-box cache describes the previous position, so it is void.
+    havePrev = false;
+}
+
 // The panel wants each pixel big-endian; the canvas works little-endian.
 static void swapBytes(uint16_t *p, int n)
 {
@@ -140,7 +184,10 @@ static void flush(int x, int y, int w, int h)
 template <typename F>
 static void window(int x, int y, int w, int h, F draw)
 {
-    canvas.attach(bufs[cur], x, y, w, h);
+    // Attaching at an origin offset by -shift makes the face draw itself
+    // shifted by +shift inside the buffer. The window that gets pushed is
+    // unchanged.
+    canvas.attach(bufs[cur], x - shiftX, y - shiftY, w, h);
     draw(canvas);
     flush(x, y, w, h);
 }
@@ -185,6 +232,7 @@ void screenClear(uint16_t bg)
 void screenRenderFace(const FaceVTable *f, const struct tm &t, float sub, bool hint)
 {
     if (!bandH) return;
+    stepShift();
     auto draw = [&](TFT_eSPI &g) {
         f->renderDirect(g, t, sub);
         if (hint) drawPortalHint(g);
@@ -218,6 +266,10 @@ void screenRenderFace(const FaceVTable *f, const struct tm &t, float sub, bool h
 void screenPaint(void (*painter)(GfxDirect &))
 {
     if (!bandH) return;
+    // Static screens creep too. The alarm interface and the setup banners can
+    // be up for a long time, and they are exactly the kind of high-contrast
+    // fixed layout that would mark a panel.
+    stepShift();
     fullFrame([painter](TFT_eSPI &g) { painter(g); });
     havePrev = false;
 }
