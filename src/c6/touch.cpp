@@ -1,4 +1,6 @@
 #include "touch.h"
+#include "i2cbus.h"
+#include "../screen.h"
 #include <Wire.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -6,7 +8,6 @@
 
 namespace touch {
 
-static const int     PIN_SDA = 18, PIN_SCL = 8;
 static const uint8_t ADDR    = 0x38;
 static const uint32_t POLL_MS = 20;
 
@@ -28,7 +29,6 @@ static uint32_t t0;
 // which stranded the user on any smooth face. The task keeps sampling at
 // POLL_MS through the render and posts finished gestures here.
 static QueueHandle_t  gestures;
-static SemaphoreHandle_t busMutex;    // Wire is shared with the sampling task
 
 // One read: touch count then X/Y of the first point, as the vendor does it.
 static bool read(int &x, int &y)
@@ -46,13 +46,30 @@ static bool read(int &x, int &y)
 }
 
 // The state machine, unchanged in behaviour - only its caller moved.
+// The panel reports a finger in its own fixed frame, so once the display is
+// rotated a physical left-to-right swipe still arrives as +x and the gesture
+// comes out backwards - swiping "next" went to the previous face at 180
+// degrees. Rotating here rather than in each caller keeps the gestures and
+// the reported position in the same frame the user is looking at.
+static void applyRotation(int &x, int &y)
+{
+    const int N = 466 - 1;
+    int rx = x, ry = y;
+    switch (screenGetRotation()) {
+        case 1: { int t = rx; rx = ry;     ry = N - t;  break; }
+        case 2: {             rx = N - rx; ry = N - ry; break; }
+        case 3: { int t = rx; rx = N - ry; ry = t;      break; }
+        default: return;
+    }
+    x = rx; y = ry;
+}
+
 static Gesture step(uint32_t now)
 {
     int x, y;
     bool on;
-    xSemaphoreTake(busMutex, portMAX_DELAY);
-    on = read(x, y);
-    xSemaphoreGive(busMutex);
+    { i2cbus::Hold h; on = read(x, y); }
+    if (on) applyRotation(x, y);
 
     if (on && !down) {                       // finger down
         down = true; moved = false; longFired = false;
@@ -88,13 +105,11 @@ static void task(void *)
 
 bool begin()
 {
-    Wire.begin(PIN_SDA, PIN_SCL, 400000);
-    Wire.beginTransmission(ADDR);
-    if (Wire.endTransmission() != 0) return false;
+    i2cbus::begin();
+    if (!i2cbus::present(ADDR)) return false;
 
-    busMutex = xSemaphoreCreateMutex();
     gestures = xQueueCreate(8, sizeof(Gesture));
-    if (!busMutex || !gestures) return false;
+    if (!gestures) return false;
 
     // Core 0, beside WiFi: the render loop owns core 1 where there are two.
     // Above the weather task's priority so a fetch cannot delay sampling.
