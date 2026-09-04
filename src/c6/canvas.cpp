@@ -156,26 +156,55 @@ void Canvas::pWideLine(int32_t ax, int32_t ay, int32_t bx, int32_t by, int32_t w
     int64_t inner = (hq > 2) ? (int64_t)(hq - 2) * (hq - 2) : 0;
     int64_t span  = outer - inner;
 
+    // Distance to the segment, without locating the closest point.
+    //
+    // The obvious form projects the pixel onto the line - t = dot / l2 - and
+    // then measures to that point. That is a 64-bit divide for every pixel of
+    // the bounding box, and this chip has no 64-bit divide instruction, so
+    // each one is a libgcc call of a hundred cycles or more. On a face that
+    // draws three hands and sixty ticks it dominated the whole render.
+    //
+    // Between the endpoints the perpendicular distance falls straight out of
+    // the cross product: |cross| / |ab|, so d2 = cross^2 / l2. Comparing
+    // cross^2 against outer * l2 instead removes the division from the test
+    // altogether, leaving multiplies. Beyond either endpoint the distance is
+    // simply to that endpoint, which needs no division either. Only a pixel
+    // actually on the anti-aliased edge divides, and those are a thin
+    // fraction of the box.
+    //
+    // It is also the more accurate form: rounding t into 16.16 and then
+    // squaring the error, as the projection did, was losing far more
+    // precision than this does.
+    const int64_t outerL2 = outer * (l2 ? l2 : 1);
+    const int64_t innerL2 = inner * (l2 ? l2 : 1);
+
     for (int32_t y = y0; y <= y1; y++) {
         int64_t py = (int64_t)y * 16 + 8;                  // pixel centre, 1/16 px
         for (int32_t x = x0; x <= x1; x++) {
             int64_t px = (int64_t)x * 16 + 8;
-            int64_t qx, qy;
-            if (l2 == 0) { qx = ax; qy = ay; }
-            else {
+            int64_t d2;                                    // quarter px^2
+
+            if (l2 == 0) {
+                int64_t ex = px - ax, ey = py - ay;
+                d2 = (ex * ex + ey * ey) / 16;
+                if (d2 >= outer) continue;
+                if (d2 <= inner) { put(x, y, c); continue; }
+            } else {
                 int64_t dot = (px - ax) * dx + (py - ay) * dy;
-                if (dot <= 0)       { qx = ax; qy = ay; }
-                else if (dot >= l2) { qx = bx; qy = by; }
-                else {
-                    int64_t t = (dot << 16) / l2;          // 16.16
-                    qx = ax + ((dx * t) >> 16);
-                    qy = ay + ((dy * t) >> 16);
+                if (dot <= 0 || dot >= l2) {               // past an end: a cap
+                    int64_t ex = (dot <= 0) ? px - ax : px - bx;
+                    int64_t ey = (dot <= 0) ? py - ay : py - by;
+                    d2 = (ex * ex + ey * ey) / 16;
+                    if (d2 >= outer) continue;
+                    if (d2 <= inner) { put(x, y, c); continue; }
+                } else {                                    // alongside: the shaft
+                    int64_t cross = (px - ax) * dy - (py - ay) * dx;
+                    int64_t c2    = cross * cross / 16;     // scale as above
+                    if (c2 >= outerL2) continue;
+                    if (c2 <= innerL2) { put(x, y, c); continue; }
+                    d2 = c2 / l2;                           // only edge pixels divide
                 }
             }
-            int64_t ex = px - qx, ey = py - qy;
-            int64_t d2 = (ex * ex + ey * ey) / 16;         // 1/256 px^2 -> quarter px^2
-            if (d2 >= outer) continue;
-            if (d2 <= inner) { put(x, y, c); continue; }
             blend(x, y, c, (int32_t)((outer - d2) * 256 / span));
         }
     }
@@ -330,6 +359,14 @@ int16_t Canvas::drawString(const char *s, int32_t x, int32_t y, uint8_t font)
         default: break;
     }
     int32_t px = P(x), py = P(y);
+
+    // Whole string outside the window: skip it without touching a glyph.
+    // drawChar rejects individually, but a caption is typically eight or ten
+    // characters and this is one compare for all of them. The width is still
+    // returned, since callers lay out against it.
+    const int32_t pxEnd = P(x + tw), pyEnd = P(y + th);
+    if (px >= ox + w || pxEnd <= ox || py >= oy + h || pyEnd <= oy) return tw;
+
     for (; *s; s++) px += drawChar((uint8_t)*s, px, py, font);
     return tw;
 }
@@ -348,6 +385,17 @@ int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
     GlyphInfo g;
     if (!fontGlyph(font, ch, g)) return 0;
     const int32_t m = TEXT_MAG * tsize;
+
+    // Reject a glyph that misses this window before decoding it. The loops
+    // below walk every pixel of the glyph and call pRect for each lit one,
+    // and pRect clips - but only after the bit has been decoded and the call
+    // made. A face is redrawn into every window, so a caption outside the
+    // current band was paying its full decode once per band. The advance
+    // width still has to be returned, since the caller uses it to place the
+    // next character.
+    const int32_t gw = (font == 1 ? 6 : g.width) * m, gh = g.height * m;
+    if (px >= ox + w || px + gw <= ox || py >= oy + h || py + gh <= oy)
+        return (int16_t)gw;
 
     if (font == 1) {                                        // 5x7, column-major
         for (int col = 0; col < 5; col++) {
