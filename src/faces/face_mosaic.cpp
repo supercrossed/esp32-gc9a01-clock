@@ -95,6 +95,25 @@ static uint8_t tPhase[NCELL], tPhRate[NCELL];
 static uint8_t nightMix = 0;   // 0 = full day, 255 = full night
 static int     shiftX = 0, shiftY = 0;   // eased centring slide, in pixels
 
+// render() runs once a frame on a full-framebuffer board, but the AMOLED
+// renders in horizontal bands and calls it once per band - eight times for a
+// full frame, and again for every dirty box. Anything that steps the
+// animation therefore cannot live in the body of render(): the field would
+// run eight times too fast, and because the steps land between bands, each
+// band would be drawn from a different state and the grid would shear.
+// This fires once per distinct (time, sub-second) instead.
+static bool     haveFrame = false;
+static time_t   lastFrameSec = 0;
+static float    lastFrameSub = -1.0f;
+
+static bool newFrame(const struct tm &t, float sub)
+{
+    time_t key = (time_t)t.tm_hour * 3600 + t.tm_min * 60 + t.tm_sec;
+    if (haveFrame && key == lastFrameSec && sub == lastFrameSub) return false;
+    haveFrame = true; lastFrameSec = key; lastFrameSub = sub;
+    return true;
+}
+
 static inline uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b)
 {
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
@@ -143,7 +162,8 @@ void faceInit()
     }
 }
 
-// One animation step. Called once per frame from render().
+// One animation step. Driven by newFrame() below, which fires once a frame
+// however many times render() is called.
 static void advanceTiles(bool night)
 {
     // Ease across rather than switch: the hue remap and the palette lerp are
@@ -228,7 +248,7 @@ static void inkCells(const struct tm &t, int &x0, int &x1, int &y0, int &y1)
 template <typename GFX>
 static void render(GFX &g, const struct tm &t, float subSec)
 {
-    (void)subSec;
+    const bool step = newFrame(t, subSec);
 
     uint8_t mask[NCELL];
     buildMask(t, mask);
@@ -240,10 +260,12 @@ static void render(GFX &g, const struct tm &t, float subSec)
     inkCells(t, ix0, ix1, iy0, iy1);
     int tx = 120 - (GRID_OFF + (ix0 * CELL + ix1 * CELL + TILE) / 2);
     int ty = 120 - (GRID_OFF + (iy0 * CELL + iy1 * CELL + TILE) / 2);
-    if      (shiftX < tx) shiftX++;
-    else if (shiftX > tx) shiftX--;
-    if      (shiftY < ty) shiftY++;
-    else if (shiftY > ty) shiftY--;
+    if (step) {
+        if      (shiftX < tx) shiftX++;
+        else if (shiftX > tx) shiftX--;
+        if      (shiftY < ty) shiftY++;
+        else if (shiftY > ty) shiftY--;
+    }
 
     g.fillScreen(C_GUTTER);
 
@@ -295,7 +317,7 @@ static void render(GFX &g, const struct tm &t, float subSec)
         }
     }
 
-    advanceTiles(isNightNow(t));
+    if (step) advanceTiles(isNightNow(t));
 }
 
 static void faceRender(TFT_eSprite &g, const struct tm &t, float sub) { render(g, t, sub); }
