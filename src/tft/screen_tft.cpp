@@ -37,6 +37,11 @@ void screenRenderFace(const FaceVTable *f, const struct tm &t, float sub, bool h
 }
 
 void screenPaint(void (*painter)(GfxDirect &)) { painter(tft); }
+
+// These boards have no orientation sensor and a fixed mounting, so rotation
+// is meaningless here rather than merely unimplemented.
+void screenSetRotation(int)  { }
+int  screenGetRotation()     { return 0; }
 void screenInvalidate()                         { }
 int  screenSweepHz()                            { return 0; }
 void screenSetBrightness(uint8_t)               { }

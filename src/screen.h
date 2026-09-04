@@ -28,6 +28,11 @@ int  screenSweepHz();
 // 0..255 where the panel supports it; ignored elsewhere.
 void screenSetBrightness(uint8_t v);
 
+// Screen rotation in quarter turns clockwise, for boards that can do it.
+// The AMOLED applies it on the way to the panel; the TFT boards ignore it.
+void screenSetRotation(int quarterTurns);
+int  screenGetRotation();
+
 // Small pill along the bottom of whatever face is showing, while the hotspot
 // is open because the network went away. Shared by both back ends.
 template <typename GFX>
