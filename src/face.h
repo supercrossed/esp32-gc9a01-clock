@@ -64,6 +64,21 @@ struct FaceVTable {
     void      (*renderDirect)(TFT_eSPI    &, const struct tm &, float);
     DirtyFn     dirty;                     // may be null (trailing member: old
                                            // six-entry initialisers still work)
+
+    // True if `dirty` lists everything that can change, so the back end may
+    // skip its rolling background refresh.
+    //
+    // That refresh exists because most dirty sets are deliberately partial -
+    // a face returns just the second-hand boxes and leaves the creeping
+    // minute hand, the date and the weather to the rolling band. The band is
+    // cheap in pixels but it re-renders the whole face every frame, which on
+    // a banded display is the dominant per-frame cost. A face that already
+    // enumerates every changing region pays that for nothing.
+    //
+    // Leave it false (or unset, for the older initialisers) unless the dirty
+    // set really is exhaustive: the failure mode is a region that silently
+    // stops updating.
+    bool        dirtyIsComplete;
 };
 
 // Seconds hand angle in radians, 0 at 12 o'clock.

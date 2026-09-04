@@ -127,10 +127,16 @@ void screenRenderFace(const FaceVTable *f, const struct tm &t, float sub, bool h
             full = true;
         } else {
             for (int i = 0; i < n; i++) dirtyWindow(rects[i], draw);
-            // and one band of background refresh, so nothing else goes stale
-            int y = rollBand * bandH;
-            window(0, y, W, min(bandH, H - y), draw);
-            rollBand = (y + bandH >= H) ? 0 : rollBand + 1;
+            // and one band of background refresh, so nothing else goes stale.
+            // Skipped where the face says its dirty set is exhaustive: the
+            // band is a full-width window, so it costs another whole-face
+            // render every frame - more than the dirty boxes themselves on a
+            // face that animates between seconds.
+            if (!f->dirtyIsComplete) {
+                int y = rollBand * bandH;
+                window(0, y, W, min(bandH, H - y), draw);
+                rollBand = (y + bandH >= H) ? 0 : rollBand + 1;
+            }
         }
     }
     if (full) { fullFrame(draw); rollBand = 0; }
