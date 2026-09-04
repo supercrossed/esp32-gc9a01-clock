@@ -12,11 +12,12 @@ Super Mini boards from the same source.
 | dotmatrix | pulsar | pcb | default |
 | ![classic](docs/faces/classic.png) | ![modern](docs/faces/modern.png) | ![panel](docs/faces/panel.png) | ![panel at night](docs/faces/panel-night.png) |
 | classic | modern | panel | panel, after sunset |
-| ![delorean](docs/faces/delorean.png) | ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) | |
-| delorean | casio, after sunset | retro, after sunset | |
+| ![delorean](docs/faces/delorean.png) | ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) | ![classic at night](docs/faces/classic-night.png) |
+| delorean | casio, after sunset | retro, after sunset | classic, after sunset |
 
 The casio and retro faces switch to an EL-backlight green after sunset, the
-panel face to mint, and the mosaic tiles drift into blues. Sunrise and sunset come from the weather
+panel face to mint, classic turns its ivory dial over to near-black, and the
+mosaic tiles drift into blues. Sunrise and sunset come from the weather
 feed, so the switch happens at the real time for wherever you've set the
 coordinates.
 
@@ -60,21 +61,30 @@ the compiler never lands on the PATH (the script handles that itself).
 
 What's different on it:
 
-- **Touch.** Swipe right-to-left for the next face, left-to-right for the
-  previous one. Hold a finger down for a second to open the WiFi setup
-  hotspot. BOOT-at-power-on still works too.
+- **Touch.** Swipe for the next or previous face. Hold a finger down for a
+  second to open the alarms. BOOT-at-power-on still works too.
+- **Alarms.** Up to eight, saved across power cuts, with eight sounds
+  through the onboard speaker. Times are set on a drum picker you can drag
+  or flick. See [docs/alarms.md](docs/alarms.md).
+- **Auto-rotate.** The IMU keeps the face upright, snapping to the nearest
+  quarter turn as you turn the watch.
+- **Real-time clock.** The battery-backed RTC holds the time while the power
+  is off, so the clock is right the moment it boots instead of waiting for
+  the network. NTP still corrects it and writes it back.
 - **Resolution.** The faces are drawn for 240 pixels; here every coordinate
   is scaled to the panel as it's drawn, so hands, rings and ticks come out
   crisp at 466 rather than upscaled. Text is the same bitmap fonts doubled,
   which at this panel's density is the same physical size as on the 1.28".
 - **Memory.** A full 466x466 frame is 434 KB and the chip hasn't got it, so
   the screen is rendered in bands. The sweeping-seconds faces redraw only
-  small boxes around the hand, at 8 Hz like a 28,800 bph automatic, plus one
-  band of the dial per frame in rotation so nothing goes stale.
+  small boxes around the hand, at 8 Hz like a 28,800 bph automatic.
 - **AMOLED.** Pure blacks are properly off. Brightness drops after sunset.
   Static faces for three hours at a time are within what these panels
   tolerate, but if you're leaving it on a desk for months, shorter rotation
   is kinder.
+
+The WiFi setup hotspot is no longer on the long press; it opens by itself
+if the network has been down for a while, as it always did.
 
 `c6_displaytest` is the bring-up check: colour bands, all three fonts, and
 a dot that follows your finger.
