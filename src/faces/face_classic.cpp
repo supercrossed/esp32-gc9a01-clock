@@ -20,14 +20,54 @@ namespace face_classic {
 #define CX      120
 #define CY      120
 
-// palette
-#define C_DIAL      0xF79E   // ivory
-#define C_BEZEL     0x2104   // thin dark rim at the very edge
-#define C_INK       0x0000   // printed track and numerals
-#define C_INK_SOFT  0x4A49   // sub-dial numerals
-#define C_HAND      0x1152   // blued steel: deep, not bright
-#define C_DATE_BG   0xFFFF
-#define C_DATE_INK  0x0000
+// ---- palette ---------------------------------------------------------------
+// Two themes, swapped at real sunrise and sunset by isNightNow(). An ivory
+// dial is right in daylight and blinding in a dark room, so after sunset the
+// dial goes to near-black with the printing in warm grey - the same watch,
+// read the other way round, rather than a different design.
+//
+// These are variables, not #defines, because every drawing routine below
+// refers to them and the theme is only known at render time.
+struct Palette {
+    uint16_t dial, bezel, ink, inkSoft, hand, second, dateBg, dateInk;
+};
+
+// Blued steel on ivory. The seconds hand is deliberately NOT the same blue as
+// the hour and minute hands: it is a separate complication on a real dial of
+// this type, usually a lighter or contrasting steel, and sharing one colour
+// made the sub-dial read as a smudge of the same hand.
+static const Palette DAY = {
+    0xF79E,   // ivory dial
+    0x2104,   // dark rim
+    0x0000,   // printed track and numerals
+    0x4A49,   // sub-dial numerals
+    0x1152,   // blued steel hour/minute
+    0x6B7D,   // seconds: a paler steel, clearly a lighter shade
+    0xFFFF,   // date window
+    0x0000
+};
+
+static const Palette NIGHT = {
+    0x10A2,   // near-black dial, faintly warm so it is not a dead hole
+    0x4208,   // rim lifts slightly instead of vanishing
+    0xC618,   // printing in warm grey, not white: white glares at night
+    0x8C51,   // sub-dial numerals, dimmer again
+    0xAEBC,   // hands in pale steel so they read against the dark dial
+    0x7BCF,   // seconds still a step down from the main hands
+    0x2945,   // date window barely lighter than the dial
+    0xE71C
+};
+
+static Palette pal = DAY;
+
+#define C_DIAL      pal.dial
+#define C_BEZEL     pal.bezel
+#define C_INK       pal.ink
+#define C_INK_SOFT  pal.inkSoft
+#define C_HAND      pal.hand
+#define C_SECOND    pal.second
+#define C_DATE_BG   pal.dateBg
+#define C_DATE_INK  pal.dateInk
 
 // geometry
 #define R_EDGE     119
@@ -41,7 +81,22 @@ namespace face_classic {
 #define SUB_CY     172
 #define SUB_R       24
 
-uint16_t faceBackground() { return C_DIAL; }
+// Called for the clear when a face is switched to, which happens before the
+// first render() has chosen a theme - so work it out here rather than reading
+// a `pal` left over from whatever was on screen last.
+uint16_t faceBackground()
+{
+#if defined(FORCE_DAY)
+    return DAY.dial;
+#elif defined(FORCE_NIGHT)
+    return NIGHT.dial;
+#else
+    time_t now = time(nullptr);
+    struct tm t;
+    localtime_r(&now, &t);
+    return isNightNow(t) ? NIGHT.dial : DAY.dial;
+#endif
+}
 bool     faceSmooth()     { return true; }
 
 static const char *ROMAN[12] = {
@@ -126,8 +181,8 @@ static void drawSmallSeconds(GFX &g, float s)
     float sn = sinf(a), cs = cosf(a);
     g.drawWideLine(SUB_CX - 6 * sn, SUB_CY + 6 * cs,
                    SUB_CX + (SUB_R - 4) * sn, SUB_CY - (SUB_R - 4) * cs,
-                   1.5f, C_HAND, C_DIAL);
-    g.fillSmoothCircle(SUB_CX, SUB_CY, 2, C_HAND, C_DIAL);
+                   1.5f, C_SECOND, C_DIAL);
+    g.fillSmoothCircle(SUB_CX, SUB_CY, 2, C_SECOND, C_DIAL);
 }
 
 // Breguet hand: a tapered shaft, a hollow ring near the end, a short point
@@ -158,6 +213,15 @@ static void drawHands(GFX &g, float h, float m)
 template <typename GFX>
 static void render(GFX &g, const struct tm &t, float subSec)
 {
+    // Theme first: every routine below reads `pal`.
+#if defined(FORCE_DAY)
+    pal = DAY;
+#elif defined(FORCE_NIGHT)
+    pal = NIGHT;
+#else
+    pal = isNightNow(t) ? NIGHT : DAY;
+#endif
+
     float s = t.tm_sec + subSec;
     float m = t.tm_min + s / 60.0f;
     float h = (t.tm_hour % 12) + m / 60.0f;
