@@ -508,11 +508,16 @@ void loop()
 
 #ifdef AMOLED_C6
     // Touch: swipe through the faces in list order, hold to open setup.
-    switch (touch::poll()) {
-        case touch::SWIPE_LEFT:  showFace((faceIdx + 1) % ROTATION_N);              break;
-        case touch::SWIPE_RIGHT: showFace((faceIdx + ROTATION_N - 1) % ROTATION_N); break;
-        case touch::LONG_PRESS:  if (!portal::running()) portal::start();           break;
-        default: break;
+    // Drained, not sampled: the sampler runs at 20 ms while a smooth frame can
+    // hold this loop for ~125 ms, so several gestures may be waiting. Taking
+    // one per iteration would pace a quick double-swipe at one face a frame.
+    for (touch::Gesture g = touch::poll(); g != touch::NONE; g = touch::poll()) {
+        switch (g) {
+            case touch::SWIPE_LEFT:  showFace((faceIdx + 1) % ROTATION_N);              break;
+            case touch::SWIPE_RIGHT: showFace((faceIdx + ROTATION_N - 1) % ROTATION_N); break;
+            case touch::LONG_PRESS:  if (!portal::running()) portal::start();           break;
+            default: break;
+        }
     }
 #endif
 
