@@ -495,13 +495,37 @@ static int faceDirty(const struct tm &t, float, const struct tm &pt, float,
                      DirtyRect *out, int max)
 {
     // The capacitor animates every frame; everything else changes at most
-    // once a second. The second box has to cover the gauge and the lamps as
-    // well as the readouts - the needle tracks signal strength and the lamp
-    // tracks the link, so leaving them out froze both on the banded display.
+    // once a second.
+    //
+    // The per-second set is listed box by box rather than as one bounding
+    // rectangle around them. A single box covering the gauge, the lamp and
+    // all three readout rows spans 190x186 logical px, which on the 466 px
+    // panel is 63% of the glass and splits into five band strips - and since
+    // render() redraws the whole face into every window, that cost six full
+    // renders and ~267 KB of QSPI on the tick of each second. The frame
+    // missed its slot and the capacitor visibly dropped frames. These seven
+    // boxes are the parts that actually change; each fits in one strip, and
+    // together they are 36% of the panel.
+    //
+    // Only the wells are listed, not the tabs above them: the tab captions
+    // are static, apart from the two that swap wording (SUNRISE/SUNSET and
+    // TEMP/WX ERR), which are covered below.
     int n = 0;
     if (max > 0) out[n++] = { 30, 30, 62, 62 };            // the capacitor
-    if (t.tm_sec != pt.tm_sec && n < max)
-        out[n++] = { 27, 30, 190, 186 };                   // gauge, lamps, readouts
+    if (t.tm_sec != pt.tm_sec) {
+        const DirtyRect perSecond[] = {
+            { 104,  32,  92, 58 },   // gauge - the needle tracks signal strength
+            { 203,  40,   9,  9 },   // status lamp - tracks the link
+            {  65, 108, 110, 24 },   // HOUR MIN SEC wells
+            {  29, 150, 182, 24 },   // WEEK DAY MONTH YEAR wells
+            // x is the left edge here, while tab() above takes a centre -
+            // these two are the tab and its well as one box.
+            {  55, 180,  58, 34 },   // SUNRISE/SUNSET tab (it swaps) and well
+            { 127, 180,  58, 34 },   // TEMP/WX ERR tab (it swaps) and well
+        };
+        for (const DirtyRect &r : perSecond)
+            if (n < max) out[n++] = r;
+    }
     return n;
 }
 
@@ -515,4 +539,8 @@ const FaceVTable FACE_DELOREAN = {
     (void(*)(TFT_eSprite&, const struct tm&, float))face_delorean::faceRender,
     (void(*)(TFT_eSPI&,    const struct tm&, float))face_delorean::faceRender,
     face_delorean::faceDirty,
+    // The boxes above are the complete set of what changes, so the back end
+    // does not need its rolling background band for this face - which spares
+    // a whole-face render on every frame.
+    true,
 };
