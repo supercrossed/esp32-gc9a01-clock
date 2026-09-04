@@ -24,15 +24,33 @@ SRC = os.path.normpath(os.path.join(HERE, "..", "..", "src", "faces"))
 
 
 def consts(face):
-    """Pull #define NAME 0xVALUE / NAME VALUE out of a face's source."""
+    """Pull #define NAME <value> out of a face's source.
+
+    Values may be plain numbers or small arithmetic over #defines already
+    seen - the faces use both, e.g. the dot-matrix digit block is defined
+    relative to the size of the field around it. Anything that is not a
+    simple integer expression over known names is skipped, as before.
+    """
     txt = open(os.path.join(SRC, f"face_{face}.cpp")).read()
     out = {}
-    for name, val in re.findall(r"#define\s+([A-Z_][A-Z0-9_]*)\s+(-?\(?[-\w]+\)?)", txt):
-        v = val.strip("()")
+    for name, val in re.findall(r"#define\s+([A-Z_][A-Z0-9_]*)\s+([^\n]+)", txt):
+        # Drop a trailing // comment, but not a division: only "//" ends a
+        # value. Excluding "/" outright truncates expressions like
+        # ((COLS - DIG_COLS) / 2) at the operator.
+        val = val.split("//")[0].strip()
+        v = val.strip("()").strip()
         try:
             out[name] = int(v, 16) if v.lower().startswith("0x") else int(v)
+            continue
         except ValueError:
             pass
+        # An expression: evaluate it against the names already defined, but
+        # only if it is arithmetic over those - never arbitrary source.
+        if re.fullmatch(r"[\sA-Z0-9_()+\-*/]+", val) and re.search(r"[A-Z_]", val):
+            try:
+                out[name] = int(eval(val, {"__builtins__": {}}, dict(out)))
+            except Exception:
+                pass
     return out, txt
 
 
@@ -327,6 +345,7 @@ FACES = {
     "pulsar": face_pulsar,
     "pcb": lambda c: faces_pcb.face_pcb(c, HH, MM, SS),
     "classic": lambda c: faces_analog.face_classic(c, HH, MM, SS, MDAY),
+    "classic-night": lambda c: faces_analog.face_classic(c, HH, MM, SS, MDAY, "NIGHT"),
     "delorean": lambda c: faces_delorean.face_delorean(c, HH, MM, SS, MDAY, MON,
                                                        YEAR, WDAY, TEMP_F,
                                                        SUNRISE, SUNSET),

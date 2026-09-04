@@ -13,7 +13,7 @@ SRC = os.path.normpath(os.path.join(HERE, "..", "..", "src", "faces"))
 WDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
 
 
-def _consts(face):
+def _consts(face, theme="DAY"):
     txt = open(os.path.join(SRC, f"face_{face}.cpp")).read()
     K = {}
     for n, v in re.findall(r"#define\s+([A-Z_][A-Z0-9_]*)\s+(-?\(?[-\w]+\)?)", txt):
@@ -22,6 +22,20 @@ def _consts(face):
             K[n] = int(v, 16) if v.lower().startswith("0x") else int(v)
         except ValueError:
             pass
+
+    # A face with more than one theme keeps its colours in named Palette
+    # structs rather than #defines, so the whole set can be swapped at
+    # sunset. Pull the requested one out and expose it under the same C_*
+    # names the drawing code below already uses.
+    m = re.search(r"struct\s+Palette\s*\{([^}]*)\}", txt)
+    p = re.search(r"static\s+const\s+Palette\s+" + theme + r"\s*=\s*\{([^}]*)\}", txt)
+    if m and p:
+        fields = re.findall(r"([a-zA-Z_]\w*)\s*(?:,|;)", m.group(1))
+        values = [v for v in re.findall(r"0x[0-9A-Fa-f]+", p.group(1))]
+        for name, val in zip(fields, values):
+            # dial -> C_DIAL, inkSoft -> C_INK_SOFT
+            snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).upper()
+            K["C_" + snake] = int(val, 16)
     return K
 
 
@@ -41,10 +55,11 @@ def _cloud(c, x, y, col):
 
 
 # --------------------------------------------------------------------------
-def face_classic(c, hh, mm, ss, mday):
-    K = _consts("classic")
+def face_classic(c, hh, mm, ss, mday, theme="DAY"):
+    K = _consts("classic", theme)
     CX = CY = 120
     D, INK, HAND = K["C_DIAL"], K["C_INK"], K["C_HAND"]
+    SECOND = K["C_SECOND"]
     SUB_CX, SUB_CY, SUB_R = K["SUB_CX"], K["SUB_CY"], K["SUB_R"]
     ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
 
@@ -97,9 +112,10 @@ def face_classic(c, hh, mm, ss, mday):
     c.drawString("45", SUB_CX - 13, SUB_CY, 1)
     a = math.radians(ss * 6)
     sn, cs = math.sin(a), math.cos(a)
+    # Small seconds has its own steel, a step lighter than the main hands.
     c.drawWideLine(SUB_CX - 6 * sn, SUB_CY + 6 * cs,
-                   SUB_CX + (SUB_R - 4) * sn, SUB_CY - (SUB_R - 4) * cs, 1.5, HAND, D)
-    c.fillSmoothCircle(SUB_CX, SUB_CY, 2, HAND, D)
+                   SUB_CX + (SUB_R - 4) * sn, SUB_CY - (SUB_R - 4) * cs, 1.5, SECOND, D)
+    c.fillSmoothCircle(SUB_CX, SUB_CY, 2, SECOND, D)
 
     def breguet(ang, back, ring_r, tip, w):
         s, co = math.sin(ang), math.cos(ang)
