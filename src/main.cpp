@@ -14,6 +14,7 @@
 #include <ArduinoJson.h>
 #include <time.h>
 #include <sys/time.h>
+#include "esp_sntp.h"
 #include "face.h"
 #include "screen.h"
 #include "settings.h"
@@ -21,6 +22,11 @@
 #include "tz.h"
 #ifdef AMOLED_C6
 #include "c6/touch.h"
+#include "c6/audio.h"
+#include "c6/alarm_ui.h"
+#include "c6/rtc.h"
+#include "c6/imu.h"
+#include "alarms.h"
 #endif
 
 // ----------------------------- compiled-in defaults ------------------------
@@ -444,6 +450,22 @@ void setup()
     screenClear(activeFace->background());
 #ifdef AMOLED_C6
     touch::begin();
+    // Sound and the alarm list. Neither is fatal if it fails: the codec is
+    // reported by ready(), and a clock with no speaker still keeps time.
+    audio::begin();
+    alarmsLoad();
+    audio::setVolume(alarms.volume);
+
+    // The battery-backed RTC, before WiFi. If it holds a plausible time the
+    // clock starts from it, so the first frame shows the real time instead of
+    // 1970 and an alarm due during boot is not missed while NTP is fetched.
+    imu::begin();
+    rtc::begin();
+    if (time_t seed = rtc::readUTC()) {
+        struct timeval tv = { .tv_sec = seed, .tv_usec = 0 };
+        settimeofday(&tv, nullptr);
+        timeValid = true;
+    }
 #endif
 
     // Initialise every face, not just the first: rotation can reach any of
@@ -484,8 +506,19 @@ void setup()
     configTzTime(tzString(CFG_TZ), "pool.ntp.org", "time.google.com", "time.nist.gov");
 
     uint32_t t0 = millis();
-    while (time(nullptr) < 1700000000 && millis() - t0 < 20000) delay(200);
+    // The RTC may already have seeded a plausible time, so waiting for the
+    // clock to cross the sanity threshold would return at once. Wait for the
+    // SNTP layer to actually report a sync instead.
+    while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED
+           && millis() - t0 < 20000) delay(200);
     timeValid = time(nullptr) > 1700000000;
+
+#ifdef AMOLED_C6
+    // NTP is the authority; push its answer back to the RTC so the next boot
+    // starts from a corrected time rather than a drifting one.
+    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED && timeValid)
+        rtc::writeUTC(time(nullptr));
+#endif
 
     // Weather runs on core 0 with WiFi; the render loop owns core 1 on the
     // S3. On the single-core chips it is just another task.
@@ -507,7 +540,35 @@ void loop()
     portal::handle();
 
 #ifdef AMOLED_C6
-    // Touch: swipe through the faces in list order, hold to open setup.
+    // Orientation: keep the face upright as the watch is turned. Sampled at a
+    // few Hz - it only has to notice a wrist turning, and the I2C read shares
+    // a bus with touch.
+    {
+        static uint32_t lastImu = 0;
+        if (millis() - lastImu > 150) {
+            lastImu = millis();
+            imu::poll();
+            int q = imu::rotation();
+            if (q != screenGetRotation()) screenSetRotation(q);
+        }
+    }
+
+    // An alarm coming due takes the screen, whatever is on it.
+    if (timeValid && !alarm_ui::ringing()) {
+        int due = alarmsDue(t);
+        if (due >= 0) { alarmsMarkFired(due, t); alarm_ui::ring(due); }
+    }
+
+    if (alarm_ui::running()) {
+        // The alarm screens want the finger itself, not gestures: they scroll
+        // and have buttons. Feed them every sample and let them own the frame.
+        alarm_ui::touch(touch::pressed(), touch::x(), touch::y());
+        while (touch::poll() != touch::NONE) { }   // discard, so none queue up
+        alarm_ui::draw();
+        return;
+    }
+
+    // Touch: swipe through the faces in list order, hold for the alarms.
     // Drained, not sampled: the sampler runs at 20 ms while a smooth frame can
     // hold this loop for ~125 ms, so several gestures may be waiting. Taking
     // one per iteration would pace a quick double-swipe at one face a frame.
@@ -515,7 +576,7 @@ void loop()
         switch (g) {
             case touch::SWIPE_LEFT:  showFace((faceIdx + 1) % ROTATION_N);              break;
             case touch::SWIPE_RIGHT: showFace((faceIdx + ROTATION_N - 1) % ROTATION_N); break;
-            case touch::LONG_PRESS:  if (!portal::running()) portal::start();           break;
+            case touch::LONG_PRESS:  alarm_ui::open();                                  break;
             default: break;
         }
     }
@@ -547,6 +608,18 @@ void loop()
         lastSyncCheck = millis();
         bool up = WiFi.status() == WL_CONNECTED;
         if (!timeValid && time(nullptr) > 1700000000) timeValid = true;
+
+#ifdef AMOLED_C6
+        // The IDF re-syncs SNTP roughly hourly. Follow it into the RTC now
+        // and then, so a power cut is never more than an hour of drift from
+        // the last good sync.
+        static uint32_t lastRtcWrite = 0;
+        if (timeValid && sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED
+            && (lastRtcWrite == 0 || millis() - lastRtcWrite > 3600000UL)) {
+            lastRtcWrite = millis();
+            rtc::writeUTC(time(nullptr));
+        }
+#endif
         statusCol = (timeValid && up) ? 0x2E68 : 0xFD20;
 
         // Self-lit panels: ease off after dark. No-op where there is a backlight.
