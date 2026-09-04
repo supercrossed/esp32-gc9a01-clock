@@ -68,6 +68,15 @@ void screenInit()
 static const uint32_t SHIFT_MS = 3UL * 60UL * 1000UL;  // one step every 3 min
 static int      shiftX = 0, shiftY = 0;
 static uint32_t lastShift = 0;
+// Bands still to be repainted at the new offset. A shift moves everything by
+// one pixel, so the old content is wrong everywhere - but forcing a full
+// frame to fix it costs 300-500 ms on the busier faces, which is several
+// frame slots and reads as a hitch every three minutes. Repainting one band
+// per frame instead spreads that over a second, and since the two versions
+// differ by a single pixel of offset there is nothing to see while it
+// catches up.
+static int      shiftBandsLeft = 0;
+static int      shiftBand = 0;
 
 // A closed tour around the edge of the box, rather than a random walk: a
 // walk revisits the middle far more often than the corners, which is where
@@ -90,8 +99,13 @@ static void stepShift()
     step = (step + 1) % N;
     shiftX = TOUR[step][0];
     shiftY = TOUR[step][1];
-    // The dirty-box cache describes the previous position, so it is void.
-    havePrev = false;
+
+    // Queue the repaint rather than demanding it all at once. havePrev stays
+    // true, so the face keeps redrawing only its own dirty boxes - which are
+    // now drawn at the new offset - while the rest of the screen is brought
+    // over a band at a time.
+    shiftBandsLeft = (H + bandH - 1) / bandH;
+    shiftBand = 0;
 }
 
 // The panel wants each pixel big-endian; the canvas works little-endian.
@@ -180,6 +194,49 @@ static void flush(int x, int y, int w, int h)
     // 90 and 270 degrees paint mostly black with fragments of a frame.
 }
 
+// Combine dirty boxes that overlap or nearly touch.
+//
+// A face describes a moving hand as a run of small boxes along it, which is
+// the honest description - but each box becomes its own window, and a window
+// costs a whole-face render because render() draws the entire face and lets
+// the canvas clip. On the default face that is twelve renders a frame for the
+// old and new hand positions, and the boxes overlap each other by about 60%,
+// so most of those pixels are pushed more than once as well.
+//
+// Merging a pair whenever their union is no bigger than the two of them put
+// together collapses a hand into one or two windows and drops roughly 40% of
+// the pixels. The test is what keeps it honest: two boxes at opposite ends of
+// the dial have a union far larger than their sum and are left alone, so this
+// never trades a big empty rectangle for a couple of small ones.
+//
+// O(n^2) over at most 32 boxes, once a frame, against a saving of several
+// whole-face renders - the arithmetic is free by comparison.
+static int mergeRects(DirtyRect *r, int n)
+{
+    bool changed = true;
+    while (changed && n > 1) {
+        changed = false;
+        for (int i = 0; i < n && !changed; i++) {
+            for (int j = i + 1; j < n; j++) {
+                int x0 = min(r[i].x, r[j].x);
+                int y0 = min(r[i].y, r[j].y);
+                int x1 = max(r[i].x + r[i].w, r[j].x + r[j].w);
+                int y1 = max(r[i].y + r[i].h, r[j].y + r[j].h);
+                int uni  = (x1 - x0) * (y1 - y0);
+                int sep  = r[i].w * r[i].h + r[j].w * r[j].h;
+                if (uni > sep) continue;
+
+                r[i].x = (int16_t)x0; r[i].y = (int16_t)y0;
+                r[i].w = (int16_t)(x1 - x0); r[i].h = (int16_t)(y1 - y0);
+                r[j] = r[--n];
+                changed = true;
+                break;
+            }
+        }
+    }
+    return n;
+}
+
 // Draw one window of the screen with `draw`, then push it.
 template <typename F>
 static void window(int x, int y, int w, int h, F draw)
@@ -245,6 +302,7 @@ void screenRenderFace(const FaceVTable *f, const struct tm &t, float sub, bool h
         if (n <= 0) {
             full = true;
         } else {
+            n = mergeRects(rects, n);
             for (int i = 0; i < n; i++) dirtyWindow(rects[i], draw);
             // and one band of background refresh, so nothing else goes stale.
             // Skipped where the face says its dirty set is exhaustive: the
@@ -255,12 +313,21 @@ void screenRenderFace(const FaceVTable *f, const struct tm &t, float sub, bool h
                 int y = rollBand * bandH;
                 window(0, y, W, min(bandH, H - y), draw);
                 rollBand = (y + bandH >= H) ? 0 : rollBand + 1;
+            } else if (shiftBandsLeft > 0) {
+                // A face with a complete dirty set has no rolling band of its
+                // own, so the pixel shift borrows one: exactly the bands that
+                // owe a repaint, and only until they are done.
+                int y = shiftBand * bandH;
+                window(0, y, W, min(bandH, H - y), draw);
+                shiftBand++;
+                shiftBandsLeft--;
             }
         }
     }
-    if (full) { fullFrame(draw); rollBand = 0; }
+    if (full) { fullFrame(draw); rollBand = 0; shiftBandsLeft = 0; }
 
     prevT = t; prevSub = sub; havePrev = true; lastFace = f; hintShown = hint;
+
 }
 
 void screenPaint(void (*painter)(GfxDirect &))
@@ -275,5 +342,10 @@ void screenPaint(void (*painter)(GfxDirect &))
 }
 
 void screenInvalidate()            { havePrev = false; }
-int  screenSweepHz()               { return 8; }     // 28,800 bph, like an automatic
+// 10 Hz rather than the 8 this ran at. Measured on the panel, a dirty frame
+// on the busiest face is about 62 ms against the 100 ms this allows, so the
+// frames that carry the sweep have room. The one frame a second that redraws
+// the readouts as well is over budget at either rate, so raising it costs
+// nothing that was not already late.
+int  screenSweepHz()               { return 10; }
 void screenSetBrightness(uint8_t v) { amoled::setBrightness(v); }
