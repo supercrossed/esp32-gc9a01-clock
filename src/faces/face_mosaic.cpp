@@ -105,6 +105,7 @@ static int     shiftX = 0, shiftY = 0;   // eased centring slide, in pixels
 static bool     haveFrame = false;
 static time_t   lastFrameSec = 0;
 static float    lastFrameSub = -1.0f;
+static uint32_t lastStepMs = 0;
 
 static bool newFrame(const struct tm &t, float sub)
 {
@@ -162,18 +163,32 @@ void faceInit()
     }
 }
 
-// One animation step. Driven by newFrame() below, which fires once a frame
-// however many times render() is called.
-static void advanceTiles(bool night)
+// One animation step, scaled by how much time has actually passed.
+//
+// The rates below are per-frame numbers tuned on the GC9A01 boards, which
+// render flat out at roughly 60 fps. The AMOLED runs its smooth faces at
+// screenSweepHz() - 8 Hz - so applying them once a frame there makes the
+// field drift about seven times too slowly and the mosaic looks static.
+// (It used to match by accident: render() ran once per band, so the field was
+// stepped eight times a frame, which happened to cancel out.)
+//
+// `steps` is therefore how many 60 fps frames this frame stood in for, so the
+// field moves at the same real-world rate whatever the back end's cadence is.
+static void advanceTiles(bool night, int steps)
 {
+    if (steps < 1) steps = 1;
+    if (steps > 16) steps = 16;            // a long stall must not jump the field
+
     // Ease across rather than switch: the hue remap and the palette lerp are
     // both driven by this, so dusk arrives as a slow fade.
-    uint8_t target = night ? 255 : 0;
-    if      (nightMix < target) nightMix += MIX_STEP;
-    else if (nightMix > target) nightMix -= MIX_STEP;
+    int target = night ? 255 : 0;
+    int mix    = nightMix;
+    if      (mix < target) mix = (mix + MIX_STEP * steps > target) ? target : mix + MIX_STEP * steps;
+    else if (mix > target) mix = (mix - MIX_STEP * steps < target) ? target : mix - MIX_STEP * steps;
+    nightMix = (uint8_t)mix;
 
     for (int i = 0; i < NCELL; i++) {
-        int p = tProg[i] + tRate[i];
+        int p = tProg[i] + tRate[i] * steps;
         if (p >= 255) {
             tHue[i]   = tHueTo[i];             // arrive, then pick a new target
             tHueTo[i] = nearbyHue(tHue[i]);
@@ -182,7 +197,7 @@ static void advanceTiles(bool night)
         } else {
             tProg[i] = (uint8_t)p;
         }
-        tPhase[i] += tPhRate[i];
+        tPhase[i] = (uint8_t)(tPhase[i] + tPhRate[i] * steps);
     }
 }
 
@@ -317,7 +332,19 @@ static void render(GFX &g, const struct tm &t, float subSec)
         }
     }
 
-    if (step) advanceTiles(isNightNow(t));
+    if (step) {
+        // How many 60 fps frames this one stood in for. The GC9A01 boards run
+        // flat out and land on 1; the AMOLED at 8 Hz lands on about 7.
+        uint32_t now = millis();
+        int frames = 1;
+        if (lastStepMs) {
+            uint32_t dt = now - lastStepMs;
+            frames = (int)((dt * 60 + 500) / 1000);
+            if (frames < 1) frames = 1;
+        }
+        lastStepMs = now;
+        advanceTiles(isNightNow(t), frames);
+    }
 }
 
 static void faceRender(TFT_eSprite &g, const struct tm &t, float sub) { render(g, t, sub); }
