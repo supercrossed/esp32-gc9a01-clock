@@ -490,8 +490,19 @@ int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
     // otherwise pay its full decode once per band. The advance width is still
     // returned, since the caller uses it to place the next character.
     const int32_t gw = (font == 1 ? 6 : g.width) * m, gh = g.height * m;
-    if (px >= ox + w || px + gw <= ox || py >= oy + h || py + gh <= oy)
+    if (px >= ox + w || px + gw <= ox) return (int16_t)gw;
+    if (g.gfx) {
+        // A GFX glyph is placed against a baseline, so its inked box is not
+        // the py..py+gh the other fonts occupy - yOff is negative and the
+        // bitmap can reach well below. Rejecting on the wrong box dropped
+        // glyphs that were partly inside the window, which showed up as
+        // letters vanishing at band boundaries.
+        const int32_t top = py + gh + (int32_t)g.yOff * m;
+        const int32_t bot = top + (int32_t)g.bmpH * m;
+        if (top >= oy + h || bot <= oy) return (int16_t)gw;
+    } else if (py >= oy + h || py + gh <= oy) {
         return (int16_t)gw;
+    }
 
     // The fonts are bitmaps at a fixed pixel size, and the panel wants them
     // at 1.94x. There is no such bitmap, so each source pixel used to be

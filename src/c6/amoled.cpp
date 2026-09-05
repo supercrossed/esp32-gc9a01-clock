@@ -96,7 +96,21 @@ void push(int x, int y, int w, int h, const uint16_t *pixels)
 void waitIdle()
 {
     if (!pending) return;
-    xSemaphoreTake(done, pdMS_TO_TICKS(500));
+    // A timeout here used to be shrugged off: pending was cleared and the
+    // give the ISR eventually posted stayed in the semaphore. The next wait
+    // then returned instantly on that stale give while its own transfer was
+    // still in flight, the renderer overwrote the buffer being clocked out,
+    // and every wait after that was one transfer behind - permanently, from
+    // a single timeout.
+    //
+    // So on a timeout, give the transfer time to land and then clear
+    // anything it left behind, rather than racing the DMA with a stale
+    // handshake. A binary semaphore cannot count, which is what made a
+    // single missed pairing stick permanently.
+    if (xSemaphoreTake(done, pdMS_TO_TICKS(500)) != pdTRUE) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        while (xSemaphoreTake(done, 0) == pdTRUE) { }
+    }
     pending = false;
 }
 

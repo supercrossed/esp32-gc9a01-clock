@@ -216,6 +216,10 @@ static bool resolveLocation()
 //
 // wxErr records which stage failed so the face can show it; there is no
 // usable serial console on these boards.
+// Set by the weather task when the feed reports a zone or offset different
+// from the one in use; acted on by loop(). See the note at the assignment.
+static volatile bool tzPending = false;
+
 static void weatherTask(void *)
 {
     for (;;) {
@@ -226,7 +230,13 @@ static void weatherTask(void *)
         } else if (!settings.hasLoc && !resolveLocation()) {
             wxErr = 6;                                    // location not found
         } else {
-            if (settings.tzName.length()) applyTimezone(CFG_TZ);
+            // The timezone is NOT re-applied here. It used to be, on every
+            // fetch, and that was a race: applyTimezone() is setenv+tzset,
+            // which rewrites newlib's global zone state, while the render
+            // loop calls localtime_r() on it every iteration. Re-applying a
+            // zone that has not changed gains nothing and gave the race ten
+            // chances an hour. It is applied at boot and when the feed says
+            // the zone or offset has actually changed - see below.
             wxUseF = settings.useF;
 
             char url[256];
@@ -286,7 +296,15 @@ static void weatherTask(void *)
                                 settings.hasOffset = true;
                                 if (tzn[0]) settings.tzName = tzn;
                                 settingsSave();
-                                applyTimezone(CFG_TZ);
+                                // Ask the render loop to apply it rather than
+                                // doing it here. tzset() rewrites newlib's
+                                // global zone state and the loop reads that
+                                // state through localtime_r() on every pass;
+                                // doing both at once from two tasks is a race
+                                // over shared, unguarded data. The loop is
+                                // the only place that reads it, so it is the
+                                // only place that should write it.
+                                tzPending = true;
                             }
                         }
                     }
@@ -644,6 +662,10 @@ void setup()
 
 void loop()
 {
+    // Apply a timezone the weather task has asked for, before this frame
+    // reads the clock - so the zone cannot change underneath localtime_r().
+    if (tzPending) { tzPending = false; applyTimezone(CFG_TZ); }
+
     struct timeval tv;
     gettimeofday(&tv, nullptr);
 
@@ -719,8 +741,16 @@ void loop()
     const bool smooth = activeFace->smooth();
     const int  hz     = screenSweepHz();
     static uint32_t lastFrameMs = 0;
+
+    // A static face redraws when the second changes. That alone is not
+    // enough: if the clock ever steps backwards - an NTP correction, a zone
+    // change - tm_sec can equal lastSec for up to a minute and the face sits
+    // there frozen until it happens to come round again. So a frame is also
+    // due if a second has passed on the monotonic clock, which cannot go
+    // back. The two conditions agree in normal running; the second one only
+    // matters when the wall clock misbehaves.
     bool due = smooth ? (hz == 0 || millis() - lastFrameMs >= (uint32_t)(1000 / hz))
-                      : t.tm_sec != lastSec;
+                      : (t.tm_sec != lastSec || millis() - lastFrameMs >= 1000);
 
     if (due) {
         lastSec     = t.tm_sec;
