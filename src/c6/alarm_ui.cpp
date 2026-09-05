@@ -45,10 +45,10 @@ static bool slider = false;        // dragging the volume slider
 // Hour and minute are dragged like a phone time picker rather than nudged
 // with arrows: the arrows were small targets on a round screen and tapping
 // the number itself - the obvious thing to do - did nothing at all.
-static const int DRUM_TOP  = 54;   // first of three rows
-static const int DRUM_RH   = 30;   // row height; font 4 is 26 px tall
-static const int DRUM_ROWS = 3;    // five rows of this height run off the glass
-static const int DRUM_SEL  = 1;    // which row is the selection
+static const int DRUM_TOP  = 26;   // first of five rows
+static const int DRUM_RH   = 20;   // row height
+static const int DRUM_ROWS = 5;    // two values either side of the selection
+static const int DRUM_SEL  = 2;    // which row is the selection
 static int  drumCol = -1;          // 0 = hour, 1 = minute, while dragging
 static int  drumAccum = 0;         // leftover drag, in px
 static int  drumLastY = 0;
@@ -229,8 +229,8 @@ static void paintEdit(GfxDirect &g)
 {
     g.fillScreen(C_BG);
 
-    const int colW = 48;
-    const int hx = 66, mx = 126;
+    const int colW = 46;
+    const int hx = 68, mx = 126;
     const int selY = DRUM_TOP + DRUM_SEL * DRUM_RH;
 
     // The selection band, drawn behind both columns so it reads as one row.
@@ -244,18 +244,26 @@ static void paintEdit(GfxDirect &g)
     g.drawString(":", CX, selY + DRUM_RH / 2 - 2, 9);
 
     // Sound: a strip that opens the picker, rather than arrows to cycle it.
-    g.fillRoundRect(CX - 56, 162, 112, 22, 11, C_CARD);
+    // Ten pixels clear of the drum above and the buttons below - at the sizes
+    // the native fonts come out these were touching each other.
+    g.fillRoundRect(CX - 58, 134, 116, 24, 12, C_CARD);
     g.setTextColor(C_TEXT, C_CARD);
-    g.drawString(audio::soundName((audio::Sound)editCopy.sound), CX, 173, 8);
+    g.drawString(audio::soundName((audio::Sound)editCopy.sound), CX, 146, 8);
 
-    // Save and Cancel share the lowest row the circle can hold at this size.
-    g.fillRoundRect(58, 186, 58, 22, 11, C_ON);
+    // Save and its opposite, on the lowest row the circle can hold a pair:
+    // at y=170 with a height of 28 that is 149 px, so two of 69 and a gap.
+    //
+    // The labels are short because the buttons cannot be wider. "Cancel" is
+    // 74 logical px in this face and "Delete" 67, against 69 px of button -
+    // they overflowed. "Save" fits at 54, and "Back" and "Del" are as clear
+    // in context as the longer words were.
+    g.fillRoundRect(42, 166, 73, 28, 14, C_ON);
     g.setTextColor(C_TEXT, C_ON);
-    g.drawString("Save", 87, 197, 9);
+    g.drawString("Save", 78, 180, 8);
 
-    g.fillRoundRect(124, 186, 58, 22, 11, C_CARD);
-    g.setTextColor(C_TEXT, C_CARD);
-    g.drawString(editIsNew ? "Cancel" : "Delete", 153, 197, 8);
+    g.fillRoundRect(125, 166, 73, 28, 14, editIsNew ? C_CARD : C_RING);
+    g.setTextColor(C_TEXT, editIsNew ? C_CARD : C_RING);
+    g.drawString(editIsNew ? "Back" : "Del", 161, 180, 8);
 }
 
 // The sound picker: every sound in a scrolling list, tapping one previews it
@@ -419,16 +427,16 @@ static void tapList(int x, int y)
 
 static void tapEdit(int x, int y)
 {
-    if (inBox(x, y, CX - 56, 158, 112, 30)) {                    // sound strip
+    if (inBox(x, y, CX - 58, 130, 116, 32)) {                    // sound strip
         screen = SOUNDS;
         scroll = 0;
         audio::blip();
         return;
     }
-    if (inBox(x, y, 58, 186, 58, 22)) {                          // Save
+    if (inBox(x, y, 42, 166, 73, 28)) {                          // Save
         audio::stop(); commitEdit(); screen = LIST; clampScroll(); return;
     }
-    if (inBox(x, y, 124, 186, 58, 22)) {                         // Cancel / Delete
+    if (inBox(x, y, 125, 166, 73, 28)) {                         // Back / Del
         audio::stop();
         if (!editIsNew) deleteEdit();
         screen = LIST;
@@ -490,8 +498,8 @@ void touch(bool down, int px, int py)
         if (screen == EDIT && y >= drumTop && y < drumBot) {
             // Which column the finger landed in. Outside both, it is not a
             // drum drag at all.
-            if      (x >= 62  && x < 118) drumCol = 0;
-            else if (x >= 122 && x < 178) drumCol = 1;
+            if      (x >= 64  && x < 118) drumCol = 0;
+            else if (x >= 122 && x < 176) drumCol = 1;
             drumAccum = 0;
             drumLastY = y;
             flingCol  = -1;            // touching down catches a coasting drum

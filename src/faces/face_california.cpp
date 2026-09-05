@@ -37,13 +37,18 @@ namespace face_california {
 // Sampled off the reference rather than guessed: the dial is a lighter,
 // slightly steely blue than a true navy, and the printing is bone rather
 // than white - at pure white the numerals glare and stop looking painted.
-#define C_DIAL      0x1A2E   // steel blue
-#define C_INK       0xDE78   // #D8CFC0, sampled off the reference. Not white:
-                             // at full white the numerals glare and stop
-                             // reading as painted enamel.
-#define C_INK_DIM   0x738E   // the minute track between hours
+#define C_DIAL      0x114A   // indigo: deeper than a steel blue, and with
+                             // more blue against the green so it reads as
+                             // ink rather than sky
+#define C_INK       0xCE35   // A warm bone. The sampled #D8CFC0 still read as
+                             // white on the AMOLED, which is brighter and
+                             // more saturated than the reference photo - so
+                             // this is a step warmer and a step down, which
+                             // is what makes it look like paint rather than
+                             // backlight. Still 8.5:1 on the dial.
+#define C_INK_DIM   0x6B4D   // the minute track between hours, warmed to match
 #define C_SEC       0xF986   // the seconds hairline
-#define C_DATE      0xDE78
+#define C_DATE      0xCE35
 #define C_EDGE      0x0000   // the hairline the hands are outlined in
 #define C_SUB       0x1189   // the well the weather sits in, a shade darker
 
@@ -118,9 +123,24 @@ static void drawDial(GFX &g)
                        5.0f, C_INK, C_DIAL);
     }
 
-    // 12 o'clock: a filled triangle pointing down into the dial
+    // 12 o'clock: a filled triangle pointing down into the dial, with its
+    // corners rounded off. A hard-pointed triangle is the one sharp thing on
+    // a dial whose every other element is a curve or a round-capped stroke.
+    //
+    // Drawn as a smaller triangle with its three edges stroked: a wide line
+    // already has round caps, so stroking the inset shape rounds each corner
+    // exactly and brings the outline back out to full size. The inset is
+    // each vertex pulled toward the centroid by the corner radius.
     const int ty = CY - R_NUM;
-    g.fillTriangle(CX - 11, ty - 10, CX + 11, ty - 10, CX, ty + 10, C_INK);
+    const float RR = 3.0f;
+    const float vx[3] = { CX - 8.4f, CX + 8.4f, (float)CX };
+    const float vy[3] = { ty - 8.4f, ty - 8.4f, ty + 7.0f };
+    g.fillTriangle((int)vx[0], (int)vy[0], (int)vx[1], (int)vy[1],
+                   (int)vx[2], (int)vy[2], C_INK);
+    for (int i = 0; i < 3; i++) {
+        int j = (i + 1) % 3;
+        g.drawWideLine(vx[i], vy[i], vx[j], vy[j], 2.0f * RR, C_INK, C_DIAL);
+    }
 }
 
 // The date, printed under 12 the way the original carries it.
