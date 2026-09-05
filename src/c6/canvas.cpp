@@ -360,7 +360,22 @@ void Canvas::drawWideLine(float ax, float ay, float bx, float by, float wd, uint
 }
 
 // ---- text -----------------------------------------------------------------
-int16_t Canvas::fontHeight(uint8_t font) { return fontHeightPx(font) * tsize; }
+// Both of these answer in LOGICAL units, because drawString does its datum
+// arithmetic there and scales the result with P() afterwards.
+//
+// A doubled font puts TEXT_MAG source pixels into one logical pixel, so its
+// logical size is just the glyph size. Fonts 6 and 8 are drawn one source
+// pixel to one PANEL pixel, so their logical size is the glyph size divided
+// by the panel scale - measuring them like the doubled fonts would report
+// them about twice as large as they are and throw every centred string off.
+static inline bool fontIsNative(uint8_t f) { return f == 6 || f == 8 || f == 9; }
+
+int16_t Canvas::fontHeight(uint8_t font)
+{
+    int32_t px = fontHeightPx(font) * tsize;
+    if (fontIsNative(font)) px = (int32_t)(((int64_t)px << 16) / Canvas::SCALE_FP);
+    return (int16_t)px;
+}
 
 int16_t Canvas::textWidth(const char *s, uint8_t font)
 {
@@ -368,7 +383,9 @@ int16_t Canvas::textWidth(const char *s, uint8_t font)
     GlyphInfo g;
     for (; *s; s++)
         if (fontGlyph(font, (uint8_t)*s, g)) wsum += g.width;
-    return wsum * tsize;
+    int32_t px = wsum * tsize;
+    if (fontIsNative(font)) px = (int32_t)(((int64_t)px << 16) / Canvas::SCALE_FP);
+    return (int16_t)px;
 }
 
 int16_t Canvas::drawString(const char *s, int32_t x, int32_t y, uint8_t font)
@@ -463,7 +480,10 @@ int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
     // it would make it enormous, and scaling is exactly what this font exists
     // to avoid: it carries the detail natively instead of having it
     // interpolated in.
-    const int32_t m = (font == 6) ? tsize : TEXT_MAG * tsize;
+    // Fonts 6 and 8 are already sized for this panel, so they go down one
+    // source pixel to one panel pixel. Doubling them would make them enormous,
+    // and scaling is the very thing they exist to avoid.
+    const int32_t m = (font == 6 || font == 8 || font == 9) ? tsize : TEXT_MAG * tsize;
 
     // Reject a glyph that misses this window before decoding it. A face is
     // redrawn into every window, so a caption outside the current band would
@@ -483,14 +503,43 @@ int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
     // coverage value from the four source pixels around it, so an edge fades
     // across m pixels rather than jumping. At the sizes these fonts are used
     // that is the difference between drawn type and pixel art.
+    // The GFX fonts are a different shape: proportional, packed MSB-first
+    // across each row of an inked box, and positioned against a baseline
+    // rather than filling a cell. Drawn here rather than through the decoder,
+    // which assumes a cell.
+    if (g.gfx) {
+        // The face asked for text of height fontHeightPx(); the glyph's own
+        // box sits inside that, offset from the baseline.
+        const int32_t base = py + (int32_t)g.height * m;
+        const int32_t bx = px + (int32_t)g.xOff * m;
+        const int32_t by = base + (int32_t)g.yOff * m;
+
+        uint32_t bit = 0;
+        for (int row = 0; row < g.bmpH; row++) {
+            for (int col = 0; col < g.bmpW; col++, bit++) {
+                if (!(pgm_read_byte(g.data + (bit >> 3)) & (0x80 >> (bit & 7))))
+                    continue;
+                if (m == 1) put(bx + col, by + row, tfg);
+                else        pRect(bx + col * m, by + row * m, m, m, tfg);
+            }
+        }
+        return (int16_t)(g.width * m);
+    }
+
     uint32_t rows[40];
     const int gwPx = (font == 1 ? 5 : g.width);
     if (!decodeGlyph(g, font, rows, (int)(sizeof rows / sizeof rows[0]))) return (int16_t)gw;
 
-    // Hard pixels: one filled square per lit source pixel, which is what the
-    // LCD-imitating faces want. Note this still reads the decoded glyph -
-    // filling every cell would draw a solid block, not a letter.
-    if (!smoothText) {
+    // Font 1 is a 5x7 cell: there is barely any shape in it, and blending its
+    // edges spreads seven rows of detail over fourteen panel pixels, which
+    // reads as a smear rather than a smaller letter. Captions in it - the tab
+    // labels on the delorean dial, for one - are more legible with hard
+    // pixels, so it is never smoothed.
+    //
+    // Hard pixels also serve the LCD-imitating faces, which ask for them.
+    // Note this still reads the decoded glyph - filling every cell would draw
+    // a solid block, not a letter.
+    if (!smoothText || font == 1) {
         for (int row = 0; row < g.height; row++)
             for (int col = 0; col < gwPx; col++)
                 if ((rows[row] >> col) & 1u)
