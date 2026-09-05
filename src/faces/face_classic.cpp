@@ -53,7 +53,12 @@ static const Palette NIGHT = {
     0xC618,   // printing in warm grey, not white: white glares at night
     0x8C51,   // sub-dial numerals, dimmer again
     0xAEBC,   // hands in pale steel so they read against the dark dial
-    0x7BCF,   // seconds still a step down from the main hands
+    // The seconds hand takes the same pale steel at night rather than a step
+    // down from it. The dimmer shade sat at 1.2:1 against the sub-dial
+    // numerals it crosses - close enough in luminance to vanish into them.
+    // By day the dial is light and a paler seconds hand still separates from
+    // the printing, so only the night theme changes.
+    0xAEBC,   // seconds: the same steel as the hands
     0x2945,   // date window barely lighter than the dial
     0xE71C
 };
@@ -147,7 +152,9 @@ static void drawDial(GFX &g)
     for (int i = 0; i < 12; i++) {
         int n = i == 0 ? 12 : i;
         if (n == 3 || n == 6) continue;
-        g.drawString(ROMAN[n - 1], numPos[i].x, numPos[i].y, 4);
+        // Font 9, drawn natively - see the default face. A dress dial lives
+        // or dies on its numerals, so they are the type worth the flash.
+        g.drawString(ROMAN[n - 1], numPos[i].x, numPos[i].y, 9);
     }
 }
 

@@ -70,11 +70,13 @@ static void drawDial(GFX &g)
 {
     g.drawSmoothCircle(CX, CY, R, C_RING, C_FACE);
 
-    // Anti-alias the 12 hour ticks; the 48 minute ticks are plain lines.
+    // Both sets drawn as wide lines. drawLine() is a single logical pixel,
+    // which on the 466 px panel is thin enough that its anti-aliasing has
+    // almost nothing to work with and the minute track reads as stepped.
     for (int i = 0; i < 60; i++) {
         const Tick &t = ticks[i];
-        if (t.hour) g.drawWideLine(t.x0, t.y0, t.x1, t.y1, 3.0f, C_TICK_HR, C_FACE);
-        else        g.drawLine(t.x0, t.y0, t.x1, t.y1, C_TICK);
+        if (t.hour) g.drawWideLine(t.x0, t.y0, t.x1, t.y1, 3.5f, C_TICK_HR, C_FACE);
+        else        g.drawWideLine(t.x0, t.y0, t.x1, t.y1, 1.6f, C_TICK,    C_FACE);
     }
 
     g.setTextDatum(MC_DATUM);
@@ -82,7 +84,10 @@ static void drawDial(GFX &g)
         uint8_t n = numerals[i].n;
         // n % 3 == 0 picks out exactly 3, 6, 9 and 12
         g.setTextColor((n % 3 == 0) ? C_NUM_MAJOR : C_NUM, C_FACE);
-        g.drawNumber(n, numerals[i].x, numerals[i].y, 4);
+        // Font 9: FreeSans Bold at the panel's own resolution rather than a
+        // 26 px bitmap doubled. Smaller on the dial than font 4 was, but the
+        // weight carries it and the edges are actually crisp.
+        g.drawNumber(n, numerals[i].x, numerals[i].y, 9);
     }
 }
 
@@ -103,7 +108,7 @@ static void drawWeather(GFX &g)
     int left = TEMP_X - (tw + 11) / 2;
 
     g.setTextDatum(ML_DATUM);
-    g.drawString(buf, left, CY, 4);
+    g.drawString(buf, left, CY, 9);
     if (wxValid) {
         g.drawCircle(left + tw + 3, CY - 7, 2, C_TEMP);
         g.drawString(wxUnit(), left + tw + 7, CY, 2);

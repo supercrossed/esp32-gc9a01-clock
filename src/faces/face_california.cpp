@@ -103,7 +103,10 @@ static void drawDial(GFX &g)
     g.setTextColor(C_INK, C_DIAL);
     for (int i = 0; i < 12; i++) {
         if (MARKS[i]) {
-            g.drawString(MARKS[i], numPos[i].x, numPos[i].y, 4);
+            // Font 8: FreeSans at the panel's own resolution, rather than a
+            // 26 px bitmap doubled. The numerals are the whole character of
+            // this dial, so they are the thing worth spending the flash on.
+            g.drawString(MARKS[i], numPos[i].x, numPos[i].y, 9);
             continue;
         }
         if (i == 0) continue;                     // 12 is the triangle, below

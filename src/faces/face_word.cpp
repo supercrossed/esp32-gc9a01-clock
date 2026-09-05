@@ -171,12 +171,11 @@ static void render(GFX &g, const struct tm &t, float subSec)
             bool on = lit[r * COLS + c];
             g.setTextColor(on ? (timeValid ? C_ON : C_WARN) : C_OFF, C_BG);
             char s[2] = { GRID[r][c], 0 };
-            // Font 4 rather than 2, and lit letters are drawn twice with a
-            // one-pixel offset to fake a bold weight - the built-in fonts
-            // have no bold, and the lit phrase needs to separate clearly
-            // from the dormant grid.
-            g.drawString(s, x, y, 4);
-            if (on) g.drawString(s, x + 1, y, 4);
+            // A lit letter is drawn in the real bold face and a dormant one
+            // in the regular, which separates the phrase from the grid far
+            // better than the old trick of drawing font 4 twice a pixel
+            // apart - and being native to the panel, both are crisp.
+            g.drawString(s, x, y, on ? 9 : 8);
         }
     }
 
