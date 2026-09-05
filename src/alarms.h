@@ -19,6 +19,10 @@ struct Alarms {
     Alarm   list[ALARM_MAX];
     int     count = 0;
     uint8_t volume = 100;         // 0..100, shared by every alarm
+    // Manual brightness trim, signed, added to the automatic day/night level.
+    // Stored here because this is already the clock's small settings blob and
+    // it saves a second NVS namespace for one number.
+    int16_t brightAdjust = 0;
 };
 
 extern Alarms alarms;

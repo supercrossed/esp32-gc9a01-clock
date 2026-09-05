@@ -15,6 +15,7 @@ void alarmsLoad()
     p.begin(NS, true);
     alarms.count  = p.getInt("count", 0);
     alarms.volume = (uint8_t)p.getUChar("vol", 100);
+    alarms.brightAdjust = (int16_t)p.getShort("bright", 0);
     if (alarms.count < 0) alarms.count = 0;
     if (alarms.count > ALARM_MAX) alarms.count = ALARM_MAX;
     // One blob per alarm rather than a packed struct: the layout can then
@@ -37,6 +38,7 @@ void alarmsSave()
     p.begin(NS, false);
     p.putInt  ("count", alarms.count);
     p.putUChar("vol",   alarms.volume);
+    p.putShort("bright", alarms.brightAdjust);
     for (int i = 0; i < alarms.count; i++) {
         char k[8];
         snprintf(k, sizeof k, "h%d", i); p.putUChar(k, alarms.list[i].hour);

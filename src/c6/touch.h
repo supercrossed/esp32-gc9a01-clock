@@ -11,7 +11,8 @@
 
 namespace touch {
 
-enum Gesture { NONE, SWIPE_LEFT, SWIPE_RIGHT, LONG_PRESS, TAP };
+enum Gesture { NONE, SWIPE_LEFT, SWIPE_RIGHT, SWIPE_UP, SWIPE_DOWN,
+               LONG_PRESS, TAP };
 
 bool    begin();                   // starts the sampling task
 Gesture poll();                    // next completed gesture, or NONE; reported once

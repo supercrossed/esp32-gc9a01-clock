@@ -85,8 +85,13 @@ static Gesture step(uint32_t now)
     if (!down) return NONE;
     down = false;                            // finger up: what was that?
     int dx = lx - sx, dy = ly - sy;
+    // Whichever axis dominates, by the same 3:2 margin either way, so a
+    // sloppy diagonal is ignored rather than being taken for whichever
+    // direction happens to win by a pixel.
     if (abs(dx) >= SWIPE_MIN && abs(dx) * 2 > abs(dy) * 3)
         return dx < 0 ? SWIPE_LEFT : SWIPE_RIGHT;
+    if (abs(dy) >= SWIPE_MIN && abs(dy) * 2 > abs(dx) * 3)
+        return dy < 0 ? SWIPE_UP : SWIPE_DOWN;
     if (!moved && !longFired && now - t0 < TAP_MAX_MS) return TAP;
     return NONE;
 }
