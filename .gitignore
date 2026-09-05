@@ -25,3 +25,10 @@ firmware/*/manifest.json
 # dropped into src/ by the pioarduino component manager on a first build; not needed
 src/idf_component.yml
 src/idf_component.yml.orig
+
+# Release images, built by scripts/release.py and attached to a GitHub
+# release rather than committed. Same reason clock.bin is ignored: an image
+# built on a machine that has a config.h carries its WiFi password.
+dist/
+tools/flasher/build/
+tools/flasher/*.spec
