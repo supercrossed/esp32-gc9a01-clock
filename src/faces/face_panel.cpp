@@ -73,15 +73,30 @@ static void seg7(GFX &g, int x, int y, int w, int h, int t, int d)
 
 // "HH:MM" or "d-m" style strings of digits, ':' and '-', in segments.
 // Returns the width drawn. Characters: 0-9, ':' , '-', ' ' (blank digit).
+// `colonCol` is what a ':' is drawn in. It defaults to the ink, because most
+// of the readouts here are times of day - sunrise, sunset - whose separator
+// has no business blinking. Only the clock passes something else, so its
+// colon can tick on the second.
+template <typename GFX>
+static int segText(GFX &g, const char *s, int x, int y, int w, int h, int t, int gap,
+                   int colonCol);
+
 template <typename GFX>
 static int segText(GFX &g, const char *s, int x, int y, int w, int h, int t, int gap)
+{
+    return segText(g, s, x, y, w, h, t, gap, (int)C_INK);
+}
+
+template <typename GFX>
+static int segText(GFX &g, const char *s, int x, int y, int w, int h, int t, int gap,
+                   int colonCol)
 {
     int x0 = x;
     for (; *s; s++) {
         if (*s == ':') {
             int q = t;
-            g.fillRect(x, y + h / 3 - q / 2, q, q, C_INK);
-            g.fillRect(x, y + 2 * h / 3 - q / 2, q, q, C_INK);
+            g.fillRect(x, y + h / 3 - q / 2, q, q, (uint16_t)colonCol);
+            g.fillRect(x, y + 2 * h / 3 - q / 2, q, q, (uint16_t)colonCol);
             x += q + gap;
         } else if (*s == '-') {
             g.fillRect(x, y + (h - t) / 2, w - 2, t, C_INK);
@@ -304,7 +319,10 @@ static void render(GFX &g, const struct tm &t, float)
     snprintf(buf, sizeof buf, "%02d:%02d", t.tm_hour, t.tm_min);
     // big digits sit on the dark ground with their own panel
     panel(g, 58, 124, 130, 52);
-    segText(g, buf, 62, 128, 24, 44, 5, 6);
+    // The colon ticks on the second. It drops to the panel colour rather
+    // than vanishing, so the digits either side do not appear to shift.
+    segText(g, buf, 62, 128, 24, 44, 5, 6,
+            (t.tm_sec & 1) ? (int)C_INK : (int)P_COL);
     // seconds, small, with the weather above them
     panel(g, 190, 124, 30, 52);
     snprintf(buf, sizeof buf, "%02d", t.tm_sec);

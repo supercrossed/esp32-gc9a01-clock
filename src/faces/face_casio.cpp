@@ -416,6 +416,11 @@ static const char *DAY_NAMES[7] = { "SUN", "MON", "TUE", "WED", "THU", "FRI", "S
 template <typename GFX>
 static void render(GFX &g, const struct tm &t, float subSec)
 {
+    // Hard pixels: this is an LCD watch, and anti-aliasing its type both
+    // softens what should be blocky and costs a lot on a face that draws
+    // this much text - enough that the once-a-second redraw was falling
+    // behind and the display looked like it updated every few seconds.
+    textSmooth(g, false);
     (void)subSec;                       // a segmented display does not sweep
     const bool   night = isNightNow(t);
     const Theme &th    = night ? NIGHT_T : DAY_T;
@@ -487,9 +492,14 @@ static void render(GFX &g, const struct tm &t, float subSec)
 
         seg7Pair(g, x, dy, dw, dh, dt, dg, t.tm_hour, th.ink, th.ghost);
 
+        // The colon blinks on the second, as the original does. It drops to
+        // the ghost colour rather than disappearing: on a real LCD an unlit
+        // segment is still faintly there, and blanking it entirely makes the
+        // digits look like they have shifted.
         int cx = x + 2 * dw + 2 * dg;
-        g.fillRect(cx, dy + 12,      cw, cw, th.ink);
-        g.fillRect(cx, dy + dh - 19, cw, cw, th.ink);
+        uint16_t colc = (t.tm_sec & 1) ? th.ink : th.ghost;
+        g.fillRect(cx, dy + 12,      cw, cw, colc);
+        g.fillRect(cx, dy + dh - 19, cw, cw, colc);
 
         seg7Pair(g, cx + cw + dg, dy, dw, dh, dt, dg, t.tm_min, th.ink, th.ghost);
     }
@@ -509,6 +519,51 @@ static void render(GFX &g, const struct tm &t, float subSec)
 static void faceRender(TFT_eSprite &g, const struct tm &t, float sub) { render(g, t, sub); }
 static void faceRender(TFT_eSPI    &g, const struct tm &t, float sub) { render(g, t, sub); }
 
+// What actually changes between one second and the next: the two seconds
+// digits, the blinking colon, and the link dot. Everything else - the date,
+// the day, the weather, the whole polygon lattice - moves once a minute at
+// most, and the lattice never moves at all.
+//
+// These are the elements, not the cells that contain them. The cells here are
+// full-width bands, so returning those redrew 44% of the panel and saved only
+// three of the eight whole-face renders a full frame costs - which was not
+// nearly enough, because a render is expensive whatever size window it is
+// clipped to. The digits themselves are under 3%.
+//
+// Without this the face repainted everything every second, and with the
+// amount it draws that stopped fitting inside a second: the display fell
+// behind and looked like it updated every three.
+static int faceDirty(const struct tm &t, float, const struct tm &pt, float,
+                     DirtyRect *out, int max)
+{
+    // On the minute everything else moves too, so ask for a full repaint.
+    if (t.tm_min != pt.tm_min) return 0;
+
+    int n = 0;
+
+    // The seconds pair, drawn at (B_SEC.x1 - 46, B_SEC.cy - 9) as two 14x18
+    // digits with a 2 px gap. Padded a little for the anti-aliased edges.
+    if (n < max) out[n++] = { (int16_t)(B_SEC.x1 - 50), (int16_t)(B_SEC.cy - 13),
+                              38, 26 };
+
+    // The link dot beside the caption.
+    if (n < max) out[n++] = { (int16_t)(B_SEC.cx + 1), (int16_t)(B_SEC.cy - 5),
+                              11, 11 };
+
+    // The colon, between the hour and minute pairs. Same arithmetic as the
+    // render: four 40-wide digits, four 5 px gaps and the 7 px colon.
+    {
+        const int dw = 40, dh = 46, dg = 5, cw = 7;
+        int total = 4 * dw + 4 * dg + cw;
+        int x     = B_TIME.cx - total / 2;
+        int dy    = B_TIME.cy - dh / 2;
+        int cx    = x + 2 * dw + 2 * dg;
+        if (n < max) out[n++] = { (int16_t)(cx - 2), (int16_t)(dy + 8),
+                                  (int16_t)(cw + 4), (int16_t)(dh - 12) };
+    }
+    return n;
+}
+
 } // namespace face_casio
 
 // Registration: the one symbol this file exposes.
@@ -519,4 +574,5 @@ const FaceVTable FACE_CASIO = {
     face_casio::faceSmooth,
     (void(*)(TFT_eSprite&, const struct tm&, float))face_casio::faceRender,
     (void(*)(TFT_eSPI&,    const struct tm&, float))face_casio::faceRender,
+    face_casio::faceDirty,
 };

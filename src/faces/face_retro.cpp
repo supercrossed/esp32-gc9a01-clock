@@ -171,9 +171,14 @@ static void render(GFX &g, const struct tm &t, float subSec)
         uint16_t ink = timeValid ? th.ink : C_WARN;
 
         seg7Pair(g, x, dy, dw, dh, dt, dg, t.tm_hour, ink);
+        // The colon blinks on the second, as the original watch does. This
+        // face draws no ghost segments - seg7Pair here takes only an ink
+        // colour - so the off state is the substrate rather than a dimmed
+        // square, which is what an LCD without a backlight actually shows.
         int cx = x + 2 * dw + 2 * dg;
-        g.fillRect(cx, dy + 10,      cw, cw, ink);
-        g.fillRect(cx, dy + dh - 16, cw, cw, ink);
+        uint16_t colc = (t.tm_sec & 1) ? ink : th.panel;
+        g.fillRect(cx, dy + 10,      cw, cw, colc);
+        g.fillRect(cx, dy + dh - 16, cw, cw, colc);
         seg7Pair(g, cx + cw + dg, dy, dw, dh, dt, dg, t.tm_min, ink);
     }
 
