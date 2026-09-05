@@ -222,3 +222,178 @@ def face_modern(c, hh, mm, ss, mday, wday, temp_f, is_day, sunset):
     c.fillSmoothCircle(CX, CY, 7, K["C_HAND"], D)
     c.fillSmoothCircle(CX, CY, 4, K["C_ACCENT"], K["C_HAND"])
     c.fillSmoothCircle(CX, CY, 2, 0x2E68, K["C_ACCENT"])
+
+
+# --------------------------------------------------------------------------
+def face_california(c, hh, mm, ss, mday, wday, wx):
+    """The California dial: Roman above, Arabic below, weather where the
+    moonphase would be."""
+    K = _consts("california")
+    CX = CY = 120
+    D, INK, DIM = K["C_DIAL"], K["C_INK"], K["C_INK_DIM"]
+    SEC, SUB = K["C_SEC"], K["C_SUB"]
+    RN = K["R_NUM"]
+    MARKS = [None, "I", "II", None, "4", "5", None, "7", "8", None, "X", "XI"]
+
+    c.fillScreen(D)
+
+    # minute track
+    for i in range(60):
+        a = math.radians(i * 6)
+        s, co = math.sin(a), math.cos(a)
+        hour = (i % 5 == 0)
+        ri = K["R_TICK_H"] if hour else K["R_TICK_I"]
+        x0, y0 = CX + ri * s, CY - ri * co
+        x1, y1 = CX + K["R_TICK_O"] * s, CY - K["R_TICK_O"] * co
+        if hour:
+            c.drawWideLine(x0, y0, x1, y1, 3.5, INK, D)
+        else:
+            c.drawWideLine(x0, y0, x1, y1, 1.6, DIM, D)
+
+    # numerals and batons
+    num = []
+    for i in range(12):
+        a = math.radians(i * 30)
+        num.append((round(CX + RN * math.sin(a)), round(CY - RN * math.cos(a))))
+    c.setTextDatum(MC)
+    c.setTextColor(INK, D)
+    for i in range(12):
+        if MARKS[i]:
+            c.drawString(MARKS[i], num[i][0], num[i][1], 4)
+            continue
+        if i == 0:
+            continue
+        a = math.radians(i * 30)
+        s, co = math.sin(a), math.cos(a)
+        c.drawWideLine(CX + (RN - 9) * s, CY - (RN - 9) * co,
+                       CX + (RN + 9) * s, CY - (RN + 9) * co, 5.0, INK, D)
+
+    # the triangle at 12
+    ty = CY - RN
+    c.fillTriangle(CX - 11, ty - 10, CX + 11, ty - 10, CX, ty + 10, INK)
+
+    # date under 12
+    WD = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+    c.setTextColor(K["C_DATE"], D)
+    c.drawString("%s %d" % (WD[wday % 7], mday), CX, CY - 44, 2)
+
+    # weather where a moonphase would sit, with no well around it
+    wx(c, CX, K["SUB_CY"], INK, D)
+
+    # hands
+    s = ss
+    m = mm + s / 60.0
+    h = (hh % 12) + m / 60.0
+    EDGE = K["C_EDGE"]
+    for ang, back, ln, wd, col in ((h * 30, 14, 58, 9.0, EDGE),
+                                   (h * 30, 14, 58, 7.0, INK),
+                                   (m * 6, 18, 92, 7.0, EDGE),
+                                   (m * 6, 18, 92, 5.0, INK),
+                                   (s * 6, 30, 100, 1.5, SEC)):
+        a = math.radians(ang)
+        c.drawWideLine(CX - back * math.sin(a), CY + back * math.cos(a),
+                       CX + ln * math.sin(a), CY - ln * math.cos(a), wd, col, D)
+    c.fillSmoothCircle(CX, CY, 5, INK, D)
+    c.fillSmoothCircle(CX, CY, 2, SEC, INK)
+
+
+# --------------------------------------------------------------------------
+def face_outrun(c, hh, mm, mday, wday, temp_f, sig, theme="NIGHT"):
+    """Synthwave sun over a perspective grid. `theme` picks one of the five
+    palettes; the firmware crossfades between them on the real sun times."""
+    K = _consts("outrun")
+    CX = 120
+    HZ, SCY, SR = K["HORIZON"], K["SUN_CY"], K["SUN_R"]
+
+    # the palettes, in the order the struct declares them
+    import re as _re
+    txt = open(os.path.join(SRC, "face_outrun.cpp")).read()
+    m = _re.search(r"static const Pal P_" + theme + r" = \{([^}]*)\}", txt)
+    vals = [int(v, 16) for v in _re.findall(r"0x[0-9A-Fa-f]+", m.group(1))]
+    skyTop, skyBot, grid, gridDim, ink, sun, sunLow, panel_c, label = vals
+
+    def mix(a, b, t):
+        ar, ag, ab = (a >> 11) & 31, (a >> 5) & 63, a & 31
+        br, bg, bb = (b >> 11) & 31, (b >> 5) & 63, b & 31
+        return (((ar + ((br - ar) * t >> 8)) << 11)
+                | ((ag + ((bg - ag) * t >> 8)) << 5)
+                | (ab + ((bb - ab) * t >> 8)))
+
+    for y in range(HZ):
+        c.drawFastHLine(0, y, 240, mix(skyTop, skyBot, y * 255 // (HZ - 1)))
+
+    # sun, sliced
+    for dy in range(-SR, SR + 1):
+        y = SCY + dy
+        if y < 0 or y >= HZ + 12:
+            continue
+        if dy > -10 and (((dy + 10) // 4) % 2 == 1):
+            continue
+        half = int(math.sqrt(max(0, SR * SR - dy * dy)) + 0.5)
+        if half <= 0:
+            continue
+        c.drawFastHLine(CX - half, y, 2 * half,
+                        mix(sun, sunLow, (dy + SR) * 255 // (2 * SR)))
+
+    c.fillRect(0, HZ, 240, 240 - HZ, skyBot)
+    for i in range(-7, 8):
+        c.drawWideLine(CX, HZ, CX + i * 46, 240, 1.4, gridDim, skyBot)
+    for i in range(1, 8):
+        f = 1.0 - (1.0 - i / 7.0) ** 2
+        y = HZ + int((240 - HZ) * f)
+        if y >= 240:
+            break
+        c.drawWideLine(0, y, 240, y, 1.4, grid, skyBot)
+    c.drawWideLine(0, HZ, 240, HZ, 2.0, grid, skyBot)
+
+    c.setTextDatum(TC)
+    c.setTextColor(label, skyTop)
+    c.drawString("O U T R U N", CX, 18, 1)
+
+    WD = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+    c.fillRoundRect(CX - 56, 30, 112, 20, 4, panel_c)
+    c.drawFastHLine(CX - 52, 30, 104, label)
+    c.drawFastHLine(CX - 52, 49, 104, label)
+    c.setTextDatum(MC)
+    c.setTextColor(ink, panel_c)
+    c.drawString("%s  %d" % (WD[wday % 7], mday), CX, 40, 2)
+
+    SEG = [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F]
+
+    def digit(x, y, w, h, d, col):
+        msk = SEG[d] if 0 <= d <= 9 else 0
+        t = 3
+        half = (h - t) // 2
+        vh = max(1, (h - 3 * t) // 2)
+        for bit, bx, by, bw, bh in (
+                (0x01, x + t, y, w - 2 * t, t),
+                (0x20, x, y + t, t, vh),
+                (0x02, x + w - t, y + t, t, vh),
+                (0x40, x + t, y + half, w - 2 * t, t),
+                (0x10, x, y + half + t, t, vh),
+                (0x04, x + w - t, y + half + t, t, vh),
+                (0x08, x + t, y + h - t, w - 2 * t, t)):
+            if msk & bit:
+                c.fillRect(bx, by, bw, bh, col)
+
+    DW, DH, GAP = 26, 42, 5
+    x = CX - (4 * DW + 3 * GAP + 10) // 2
+    digit(x, 58, DW, DH, hh // 10, ink)
+    digit(x + DW + GAP, 58, DW, DH, hh % 10, ink)
+    c.fillRect(x + 2 * (DW + GAP) + 2, 58 + DH // 3, 4, 4, ink)
+    c.fillRect(x + 2 * (DW + GAP) + 2, 58 + 2 * DH // 3, 4, 4, ink)  # lit half the time
+    digit(x + 2 * (DW + GAP) + 10, 58, DW, DH, mm // 10, ink)
+    digit(x + 3 * (DW + GAP) + 10, 58, DW, DH, mm % 10, ink)
+
+    for px in (48, 124):
+        c.fillRoundRect(px, 176, 66, 28, 4, panel_c)
+        c.drawRoundRect(px, 176, 66, 28, 4, label)
+    c.setTextDatum(MC)
+    c.setTextColor(ink, panel_c)
+    c.drawString("%d\xb0" % temp_f, 81, 186, 2)
+    c.setTextColor(label, panel_c)
+    c.drawString("WEATHER", 81, 197, 1)
+    c.setTextColor(ink, panel_c)
+    c.drawString("CLOUDY", 157, 186, 2)
+    c.setTextColor(label, panel_c)
+    c.drawString("CONDITIONS", 157, 197, 1)
