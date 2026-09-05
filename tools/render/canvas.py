@@ -51,6 +51,12 @@ class Canvas:
         if 0 <= x < self.W and 0 <= y < self.H:
             self.px[y * self.W + x] = c
 
+    def _get(self, x, y):
+        x, y = int(x), int(y)
+        if 0 <= x < self.W and 0 <= y < self.H:
+            return self.px[y * self.W + x]
+        return 0
+
     def _blend(self, c, b, a):
         a = max(0.0, min(1.0, a))
         cr, cg, cb = (c >> 11) & 0x1F, (c >> 5) & 0x3F, c & 0x1F
@@ -173,7 +179,13 @@ class Canvas:
                 d = math.hypot(ax + t * dx - x, ay + t * dy - y)
                 cov = min(1.0, max(0.0, r + 0.5 - d))
                 if cov > 0:
-                    self.drawPixel(x, y, self._blend(c, bgc, cov))
+                    # Composite against what is already there, not against the
+                    # caller's background. The firmware blends into the frame
+                    # buffer, and blending against bgc instead makes every
+                    # segment's soft edge erase its neighbour's - which turned
+                    # a stepped arc into a string of beads in the preview
+                    # while the real panel drew it solid.
+                    self.drawPixel(x, y, self._blend(c, self._get(x, y), cov))
 
     # ---- text ----
     def _fontinfo(self, f):
