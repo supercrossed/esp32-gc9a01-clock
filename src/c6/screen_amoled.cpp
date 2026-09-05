@@ -244,6 +244,11 @@ static void window(int x, int y, int w, int h, F draw)
     // Attaching at an origin offset by -shift makes the face draw itself
     // shifted by +shift inside the buffer. The window that gets pushed is
     // unchanged.
+    // The canvas is shared between faces, so its text settings have to be
+    // put back to the default for every window: a face that turned smoothing
+    // off would otherwise leave the next one pixelated.
+    canvas.setTextSmooth(true);
+    canvas.setTextSize(1);
     canvas.attach(bufs[cur], x - shiftX, y - shiftY, w, h);
     draw(canvas);
     flush(x, y, w, h);

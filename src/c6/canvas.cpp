@@ -219,14 +219,40 @@ void Canvas::pTriangle(int32_t x0, int32_t y0, int32_t x1, int32_t y1,
     if (maxx > ox + w - 1) maxx = ox + w - 1;
     if (miny < oy) miny = oy;
     if (maxy > oy + h - 1) maxy = oy + h - 1;
+    // The three edge functions are signed areas, so each one is proportional
+    // to the distance from that edge - scaled by the edge's length. Dividing
+    // by that length turns it into a real distance, which is what lets the
+    // border pixels be blended instead of hard-cut. Without it a filled
+    // triangle is the one shape on a dial that still has jagged edges, which
+    // is conspicuous next to anti-aliased hands and circles.
+    //
+    // The lengths are per-triangle, so the roots are three per call rather
+    // than per pixel.
+    const float l1 = sqrtf((float)((y0 - y1) * (y0 - y1) + (x0 - x1) * (x0 - x1)));
+    const float l2 = sqrtf((float)((y1 - y2) * (y1 - y2) + (x1 - x2) * (x1 - x2)));
+    const float l3 = sqrtf((float)((y2 - y0) * (y2 - y0) + (x2 - x0) * (x2 - x0)));
+    const float i1 = l1 > 0 ? 1.0f / l1 : 0.0f;
+    const float i2 = l2 > 0 ? 1.0f / l2 : 0.0f;
+    const float i3 = l3 > 0 ? 1.0f / l3 : 0.0f;
+
+    // Which way round the vertices were given decides the sign of "inside".
+    const int32_t area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+    const float   sgn  = (area < 0) ? -1.0f : 1.0f;
+
     for (int32_t y = miny; y <= maxy; y++)
         for (int32_t x = minx; x <= maxx; x++) {
             int32_t d1 = (x - x1) * (y0 - y1) - (x0 - x1) * (y - y1);
             int32_t d2 = (x - x2) * (y1 - y2) - (x1 - x2) * (y - y2);
             int32_t d3 = (x - x0) * (y2 - y0) - (x2 - x0) * (y - y0);
-            bool neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-            bool pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
-            if (!(neg && pos)) put(x, y, c);
+
+            // Distance to the nearest edge, positive inside.
+            float e1 = sgn * d1 * i1, e2 = sgn * d2 * i2, e3 = sgn * d3 * i3;
+            float e  = e1 < e2 ? e1 : e2;
+            if (e3 < e) e = e3;
+
+            if (e >= 0.5f) { put(x, y, c); continue; }   // well inside
+            if (e <= -0.5f) continue;                    // well outside
+            blend(x, y, c, (int32_t)((e + 0.5f) * 256.0f));
         }
 }
 
@@ -380,42 +406,36 @@ int16_t Canvas::drawNumber(long n, int32_t x, int32_t y, uint8_t font)
 
 // Draws one glyph at a physical origin, pixel-doubled (times the text size).
 // Returns the physical advance.
-int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
+// Decode a glyph into a row-per-uint32 bitmap. All three fonts store their
+// pixels differently, so unpacking once here means the drawing below has a
+// single shape to work with rather than three.
+static bool decodeGlyph(const GlyphInfo &g, uint8_t font, uint32_t *rows, int maxRows)
 {
-    GlyphInfo g;
-    if (!fontGlyph(font, ch, g)) return 0;
-    const int32_t m = TEXT_MAG * tsize;
-
-    // Reject a glyph that misses this window before decoding it. The loops
-    // below walk every pixel of the glyph and call pRect for each lit one,
-    // and pRect clips - but only after the bit has been decoded and the call
-    // made. A face is redrawn into every window, so a caption outside the
-    // current band was paying its full decode once per band. The advance
-    // width still has to be returned, since the caller uses it to place the
-    // next character.
-    const int32_t gw = (font == 1 ? 6 : g.width) * m, gh = g.height * m;
-    if (px >= ox + w || px + gw <= ox || py >= oy + h || py + gh <= oy)
-        return (int16_t)gw;
+    if (g.height > maxRows || g.width > 32) return false;
+    for (int i = 0; i < g.height; i++) rows[i] = 0;
 
     if (font == 1) {                                        // 5x7, column-major
         for (int col = 0; col < 5; col++) {
             uint8_t line = pgm_read_byte(g.data + col);
-            for (int row = 0; row < 8; row++, line >>= 1)
-                if (line & 1) pRect(px + col * m, py + row * m, m, m, tfg);
+            for (int row = 0; row < 8 && row < g.height; row++, line >>= 1)
+                if (line & 1) rows[row] |= (1u << col);
         }
-        return 6 * m;
+        return true;
     }
     if (font == 2) {                                        // bitmap rows, MSB first
         int bytesPerRow = (g.width + 6) / 8;
         for (int row = 0; row < g.height; row++)
             for (int k = 0; k < bytesPerRow; k++) {
                 uint8_t line = pgm_read_byte(g.data + row * bytesPerRow + k);
-                for (int b = 0; b < 8 && line; b++, line <<= 1)
-                    if (line & 0x80) pRect(px + (k * 8 + b) * m, py + row * m, m, m, tfg);
+                for (int b = 0; b < 8; b++)
+                    if (line & (0x80 >> b)) {
+                        int c = k * 8 + b;
+                        if (c < g.width) rows[row] |= (1u << c);
+                    }
             }
-        return g.width * m;
+        return true;
     }
-    // font 4: run-length. High bit set = run of lit pixels, else a gap.
+    // fonts 4 and 6: run-length. High bit set = a run of lit pixels, else a gap.
     int32_t total = g.width * g.height, pc = 0;
     const uint8_t *p = g.data;
     while (pc < total) {
@@ -423,12 +443,100 @@ int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
         if (line & 0x80) {
             int run = (line & 0x7F) + 1;
             while (run-- && pc < total) {
-                pRect(px + (pc % g.width) * m, py + (pc / g.width) * m, m, m, tfg);
+                rows[pc / g.width] |= (1u << (pc % g.width));
                 pc++;
             }
         } else {
             pc += line + 1;
         }
     }
-    return g.width * m;
+    return true;
+}
+
+int16_t Canvas::drawChar(uint16_t ch, int32_t px, int32_t py, uint8_t font)
+{
+    GlyphInfo g;
+    if (!fontGlyph(font, ch, g)) return 0;
+
+    // Font 6 is already sized for this panel - 48 px against the 26 px of
+    // font 4 - so it is drawn one source pixel to one panel pixel. Doubling
+    // it would make it enormous, and scaling is exactly what this font exists
+    // to avoid: it carries the detail natively instead of having it
+    // interpolated in.
+    const int32_t m = (font == 6) ? tsize : TEXT_MAG * tsize;
+
+    // Reject a glyph that misses this window before decoding it. A face is
+    // redrawn into every window, so a caption outside the current band would
+    // otherwise pay its full decode once per band. The advance width is still
+    // returned, since the caller uses it to place the next character.
+    const int32_t gw = (font == 1 ? 6 : g.width) * m, gh = g.height * m;
+    if (px >= ox + w || px + gw <= ox || py >= oy + h || py + gh <= oy)
+        return (int16_t)gw;
+
+    // The fonts are bitmaps at a fixed pixel size, and the panel wants them
+    // at 1.94x. There is no such bitmap, so each source pixel used to be
+    // block-filled into an m x m square - which left every letterform with
+    // hard stair-steps, conspicuous beside the anti-aliased hands and ticks
+    // drawn around it.
+    //
+    // Sampling the glyph bilinearly instead gives each output pixel a
+    // coverage value from the four source pixels around it, so an edge fades
+    // across m pixels rather than jumping. At the sizes these fonts are used
+    // that is the difference between drawn type and pixel art.
+    uint32_t rows[40];
+    const int gwPx = (font == 1 ? 5 : g.width);
+    if (!decodeGlyph(g, font, rows, (int)(sizeof rows / sizeof rows[0]))) return (int16_t)gw;
+
+    // Hard pixels: one filled square per lit source pixel, which is what the
+    // LCD-imitating faces want. Note this still reads the decoded glyph -
+    // filling every cell would draw a solid block, not a letter.
+    if (!smoothText) {
+        for (int row = 0; row < g.height; row++)
+            for (int col = 0; col < gwPx; col++)
+                if ((rows[row] >> col) & 1u)
+                    pRect(px + col * m, py + row * m, m, m, tfg);
+        return (int16_t)gw;
+    }
+
+    auto src = [&](int x, int y) -> int {
+        if (x < 0 || y < 0 || x >= gwPx || y >= g.height) return 0;
+        return (rows[y] >> x) & 1u;
+    };
+
+    // Walk the output box, clipped to the window.
+    int32_t x0 = px, y0 = py, x1 = px + gwPx * m, y1 = py + g.height * m;
+    if (x0 < ox) x0 = ox;
+    if (y0 < oy) y0 = oy;
+    if (x1 > ox + w) x1 = ox + w;
+    if (y1 > oy + h) y1 = oy + h;
+
+    for (int32_t Y = y0; Y < y1; Y++) {
+        // Position of this output row inside the glyph, in 8.8 fixed point,
+        // taken at the pixel centre and offset back by half a source pixel so
+        // the four taps straddle it.
+        int32_t fy = (((Y - py) * 256 + 128) / m) - 128;
+        int32_t sy = fy >> 8, wy = fy & 255;
+        if (fy < 0) { sy = -1; wy = fy + 256; }
+
+        for (int32_t X = x0; X < x1; X++) {
+            int32_t fx = (((X - px) * 256 + 128) / m) - 128;
+            int32_t sx = fx >> 8, wx = fx & 255;
+            if (fx < 0) { sx = -1; wx = fx + 256; }
+
+            int a = src(sx,     sy);
+            int b = src(sx + 1, sy);
+            int c = src(sx,     sy + 1);
+            int d = src(sx + 1, sy + 1);
+
+            // bilinear: top and bottom rows blended, then between them
+            int top = a * (256 - wx) + b * wx;
+            int bot = c * (256 - wx) + d * wx;
+            int cov = (top * (256 - wy) + bot * wy) >> 8;    // 0..256
+
+            if (cov <= 8) continue;
+            if (cov >= 248) { put(X, Y, tfg); continue; }
+            blend(X, Y, tfg, cov);
+        }
+    }
+    return (int16_t)(font == 1 ? 6 * m : g.width * m);
 }

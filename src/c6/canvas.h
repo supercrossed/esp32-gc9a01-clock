@@ -45,6 +45,10 @@ public:
     void setTextColor(uint16_t fg)              { tfg = fg; tbg = fg; }
     void setTextColor(uint16_t fg, uint16_t bg) { tfg = fg; tbg = bg; }
     void setTextDatum(uint8_t d)                { datum = d; }
+    // Text is anti-aliased by default. A face whose whole point is that it
+    // looks like a cheap LCD - the retro and dot-matrix ones - turns it off,
+    // because smoothing the type there erases the effect being imitated.
+    void setTextSmooth(bool on)                 { smoothText = on; }
     void setTextSize(uint8_t s)                 { tsize = s < 1 ? 1 : s; }
 
     // ---- fills and lines (logical coordinates) ----
@@ -91,6 +95,7 @@ private:
     int ox = 0, oy = 0, w = 0, h = 0;
     uint16_t tfg = 0xFFFF, tbg = 0x0000;
     uint8_t  datum = TL_DATUM, tsize = 1;
+    bool     smoothText = true;
 
     // centre of a logical pixel, in physical pixels / in 1/16 physical px
     static inline int32_t Pc(int32_t v)   { return (int32_t)(((int64_t)(2 * v + 1) * SCALE_FP / 2 + 32768) >> 16); }
