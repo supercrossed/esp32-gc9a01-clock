@@ -115,6 +115,9 @@ static const char *MONS[12] = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
 template <typename GFX>
 static void render(GFX &g, const struct tm &t, float subSec)
 {
+    // Hard pixels: this face is imitating a cheap LCD, and smoothing the
+    // type would erase the very thing being imitated.
+    textSmooth(g, false);
     (void)subSec;
     char buf[40];
     const Theme &th = isNightHere(t) ? NIGHT_T : DAY_T;

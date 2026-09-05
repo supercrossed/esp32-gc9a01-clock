@@ -265,10 +265,7 @@ static void render(GFX &g, const struct tm &t, float)
 
     // ---- second row: signal | month/day | moon | date ----------------------
     panel(g, 30, 84, 38, 34);
-    int rssi = WiFi.RSSI();
-    int sig  = (WiFi.status() == WL_CONNECTED) ? 2 * (rssi + 100) : 0;
-    if (sig < 0) sig = 0;
-    if (sig > 100) sig = 100;
+    int sig = wifiLevel();
     signalBars(g, 40, 97, sig);
     snprintf(buf, sizeof buf, "%d", sig);
     {

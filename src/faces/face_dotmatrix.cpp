@@ -100,6 +100,9 @@ static void stamp(uint8_t *m, int d, int c0, int r0)
 template <typename GFX>
 static void render(GFX &g, const struct tm &t, float subSec)
 {
+    // Hard pixels: this face is imitating a cheap LCD, and smoothing the
+    // type would erase the very thing being imitated.
+    textSmooth(g, false);
     (void)subSec;
     char buf[16];
 
