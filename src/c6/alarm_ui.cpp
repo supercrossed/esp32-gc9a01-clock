@@ -122,7 +122,7 @@ static void paintList(GfxDirect &g)
 
     g.setTextDatum(TC_DATUM);
     g.setTextColor(C_TEXT, C_BG);
-    g.drawString("ALARMS", CX, 16, 4);
+    g.drawString("ALARMS", CX, 16, 9);
 
     // Sound never reports itself over serial on this board (UART0 only), so
     // a failed codec says so here rather than just staying quiet.
@@ -135,8 +135,10 @@ static void paintList(GfxDirect &g)
     if (alarms.count == 0) {
         g.setTextDatum(MC_DATUM);
         g.setTextColor(C_DIM, C_BG);
-        g.drawString("No alarms", CX, 104, 4);
-        g.drawString("Tap + to add one", CX, 126, 2);
+        // Both lines lifted: at the native font sizes the second one ran
+        // into the VOLUME caption below it.
+        g.drawString("No alarms", CX, 88, 9);
+        g.drawString("Tap + to add one", CX, 110, 8);
     }
 
     for (int i = 0; i < alarms.count; i++) {
@@ -158,13 +160,15 @@ static void paintList(GfxDirect &g)
         alarmFormat(alarms.list[i], buf, sizeof buf);
         g.setTextDatum(ML_DATUM);
         g.setTextColor(alarms.list[i].on ? C_TEXT : C_DIM, C_CARD);
-        // Font 4 is the largest this canvas has - fonts 6 and 7 exist in
-        // TFT_eSPI but not here, and asking for one draws nothing at all.
-        g.drawString(buf, x + 12, y + 14, 4);
+        // Font 9: bold, and native to this panel rather than a bitmap
+        // doubled. This is the number the row exists to show.
+        g.drawString(buf, x + 12, y + 12, 9);
 
         g.setTextColor(C_DIM, C_CARD);
+        // The two lines are spaced for the native fonts, which are a pixel
+        // taller than the font 2 this used to use and would otherwise touch.
         g.drawString(audio::soundName((audio::Sound)alarms.list[i].sound),
-                     x + 12, y + 29, 2);
+                     x + 12, y + 28, 8);
 
         drawToggle(g, x + w - 46, y + h / 2 - 9, alarms.list[i].on);
     }
@@ -181,14 +185,17 @@ static void paintList(GfxDirect &g)
     g.setTextColor(C_DIM, C_BG);
     g.drawString("VOLUME", CX, 138, 1);
 
-    // Done and +, both inside RSAFE on the bottom arc.
-    g.fillRoundRect(48, 176, 68, 24, 12, C_CARD);
+    // Done and +, sized for the type rather than the type squeezed into
+    // them: "Done" in the native font is about 55 px wide, which left barely
+    // a pixel either side of the old 68 px box. The pair is laid out from the
+    // centre so it stays symmetrical inside the arc.
+    g.fillRoundRect(56, 172, 80, 28, 14, C_CARD);
     g.setTextColor(C_TEXT, C_CARD);
-    g.drawString("Done", 82, 188, 2);
+    g.drawString("Done", 96, 186, 8);
 
-    g.fillSmoothCircle(158, 188, 17, C_ACCENT, C_BG);
+    g.fillSmoothCircle(165, 186, 19, C_ACCENT, C_BG);
     g.setTextColor(C_BG, C_ACCENT);
-    g.drawString("+", 158, 186, 4);
+    g.drawString("+", 165, 184, 9);
 }
 
 // One column of the time drum. `value` is the current number, `mod` its
@@ -207,13 +214,13 @@ static void drumColumn(GfxDirect &g, int x, int w, int value, int mod)
         g.setTextDatum(MC_DATUM);
         if (off == 0) {
             g.setTextColor(C_TEXT, C_CARD);
-            g.drawString(b, x + w / 2, y + DRUM_RH / 2, 4);
+            g.drawString(b, x + w / 2, y + DRUM_RH / 2, 9);
         } else {
             // Two steps of dimming, so the column fades out at its ends.
             // Font 4 is the selected row, so neighbours step down to 2 then 1
             // - using 4 for them too would flatten the hierarchy.
             g.setTextColor(C_DIM, C_BG);
-            g.drawString(b, x + w / 2, y + DRUM_RH / 2, 2);
+            g.drawString(b, x + w / 2, y + DRUM_RH / 2, 8);
         }
     }
 }
@@ -234,21 +241,21 @@ static void paintEdit(GfxDirect &g)
 
     g.setTextDatum(MC_DATUM);
     g.setTextColor(C_TEXT, C_CARD);
-    g.drawString(":", CX, selY + DRUM_RH / 2 - 2, 4);
+    g.drawString(":", CX, selY + DRUM_RH / 2 - 2, 9);
 
     // Sound: a strip that opens the picker, rather than arrows to cycle it.
     g.fillRoundRect(CX - 56, 162, 112, 22, 11, C_CARD);
     g.setTextColor(C_TEXT, C_CARD);
-    g.drawString(audio::soundName((audio::Sound)editCopy.sound), CX, 173, 2);
+    g.drawString(audio::soundName((audio::Sound)editCopy.sound), CX, 173, 8);
 
     // Save and Cancel share the lowest row the circle can hold at this size.
     g.fillRoundRect(58, 186, 58, 22, 11, C_ON);
     g.setTextColor(C_TEXT, C_ON);
-    g.drawString("Save", 87, 197, 2);
+    g.drawString("Save", 87, 197, 9);
 
     g.fillRoundRect(124, 186, 58, 22, 11, C_CARD);
     g.setTextColor(C_TEXT, C_CARD);
-    g.drawString(editIsNew ? "Cancel" : "Delete", 153, 197, 2);
+    g.drawString(editIsNew ? "Cancel" : "Delete", 153, 197, 8);
 }
 
 // The sound picker: every sound in a scrolling list, tapping one previews it
@@ -271,13 +278,13 @@ static void paintSounds(GfxDirect &g)
         g.fillRoundRect(x, y, w, RH - 4, 6, sel ? C_ON : C_CARD);
         g.setTextDatum(MC_DATUM);
         g.setTextColor(C_TEXT, sel ? C_ON : C_CARD);
-        g.drawString(audio::soundName((audio::Sound)i), CX, y + (RH - 4) / 2, 2);
+        g.drawString(audio::soundName((audio::Sound)i), CX, y + (RH - 4) / 2, 8);
     }
 
     g.fillRoundRect(CX - 34, 186, 68, 22, 11, C_CARD);
     g.setTextDatum(MC_DATUM);
     g.setTextColor(C_TEXT, C_CARD);
-    g.drawString("Back", CX, 197, 2);
+    g.drawString("Back", CX, 197, 8);
 }
 
 static void paintRinger(GfxDirect &g)
@@ -298,15 +305,16 @@ static void paintRinger(GfxDirect &g)
 
     g.setTextDatum(MC_DATUM);
     g.setTextColor(C_TEXT, C_BG);
-    g.setTextSize(2);                 // font 4 doubled; 6 and 7 do not exist here
-    g.drawString(buf, CX, 98, 4);
-    g.setTextSize(1);
+    // Font 6: the 48 px numeral face, drawn one source pixel to one panel
+    // pixel. Not scaled up - the whole point of a native font is that it is
+    // not, and setTextSize here would put the blockiness straight back.
+    g.drawString(buf, CX, 98, 6);
     g.setTextColor(C_ACCENT, C_BG);
-    g.drawString("ALARM", CX, 138, 4);
+    g.drawString("ALARM", CX, 138, 9);
 
     g.fillRoundRect(CX - 54, 166, 108, 34, 8, C_RING);
     g.setTextColor(C_TEXT, C_RING);
-    g.drawString("Dismiss", CX, 183, 4);
+    g.drawString("Dismiss", CX, 183, 9);
 }
 
 static void paint(GfxDirect &g)
@@ -365,10 +373,10 @@ static void clampScroll()
 
 static void tapList(int x, int y)
 {
-    if (inBox(x, y, 48, 176, 68, 24)) { close(); return; }        // Done
+    if (inBox(x, y, 56, 172, 80, 28)) { close(); return; }        // Done
 
-    int dx = x - 158, dy = y - 188;                               // +
-    if (dx * dx + dy * dy <= 21 * 21) {
+    int dx = x - 165, dy = y - 186;                               // +
+    if (dx * dx + dy * dy <= 23 * 23) {
         if (alarms.count >= ALARM_MAX) return;
         editCopy  = Alarm();
         editIsNew = true;

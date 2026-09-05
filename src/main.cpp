@@ -331,7 +331,14 @@ static void paintBanner(GfxDirect &g)
     g.fillScreen(bg);
     g.setTextDatum(MC_DATUM);
     g.setTextColor(bannerCol, bg);
+    // The headline in the bold face where there is one. On the AMOLED that
+    // is font 9, drawn at the panel's own resolution rather than a bitmap
+    // doubled; the GC9A01 boards have no such font and stay on font 4.
+#ifdef AMOLED_C6
+    g.drawString(bannerL1, 120, 108, 9);
+#else
     g.drawString(bannerL1, 120, 108, 4);
+#endif
     if (bannerL2) {
         g.setTextColor(0x7BEF, bg);
         g.drawString(bannerL2, 120, 138, 2);
@@ -348,13 +355,21 @@ static void banner(const char *line1, const char *line2, uint16_t color)
 static const char *setupStatus = "";
 static void paintSetup(GfxDirect &g)
 {
+    // The three lines that matter here - what to join, and where to go - in
+    // the bold face on the board that has one. This screen is read off a
+    // phone in one hand, so legibility is the whole job of it.
+#ifdef AMOLED_C6
+    const uint8_t HEAD = 9;
+#else
+    const uint8_t HEAD = 4;
+#endif
     g.fillScreen(0x0000);
     g.setTextDatum(MC_DATUM);
-    g.setTextColor(0xFD20, 0x0000); g.drawString("WiFi setup",       120,  50, 4);
+    g.setTextColor(0xFD20, 0x0000); g.drawString("WiFi setup",       120,  50, HEAD);
     g.setTextColor(0x9CD3, 0x0000); g.drawString("join the network", 120,  82, 2);
-    g.setTextColor(0xFFFF, 0x0000); g.drawString(portal::AP_SSID,    120, 106, 4);
+    g.setTextColor(0xFFFF, 0x0000); g.drawString(portal::AP_SSID,    120, 106, HEAD);
     g.setTextColor(0x9CD3, 0x0000); g.drawString("then open",        120, 134, 2);
-    g.setTextColor(0xFFFF, 0x0000); g.drawString("192.168.4.1",      120, 158, 4);
+    g.setTextColor(0xFFFF, 0x0000); g.drawString("192.168.4.1",      120, 158, HEAD);
     g.setTextColor(0x7BEF, 0x0000); g.drawString(setupStatus,        120, 196, 2);
 }
 static void drawSetupScreen(const char *status)
