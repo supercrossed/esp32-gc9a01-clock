@@ -85,9 +85,9 @@ def face_default(c):
         x0, y0 = CX + r_in * s, CY - r_in * co
         x1, y1 = CX + r_out * s, CY - r_out * co
         if hour:
-            c.drawWideLine(x0, y0, x1, y1, 3.0, K["C_TICK_HR"], K["C_FACE"])
+            c.drawWideLine(x0, y0, x1, y1, 3.5, K["C_TICK_HR"], K["C_FACE"])
         else:
-            c.drawLine(x0, y0, x1, y1, K["C_TICK"])
+            c.drawWideLine(x0, y0, x1, y1, 1.6, K["C_TICK"], K["C_FACE"])
     c.setTextDatum(MC)
     for n in range(1, 13):
         a = math.radians(n * 30)
