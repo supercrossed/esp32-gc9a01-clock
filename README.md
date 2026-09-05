@@ -1,6 +1,6 @@
 # Round LCD clock for the ESP32 Super Mini
 
-An NTP clock with weather on a 1.28" round GC9A01 display, with twelve watch
+An NTP clock with weather on a 1.28" round GC9A01 display, with fourteen watch
 faces. It picks a different one at random every few hours. Builds for both the ESP32-S3 and ESP32-C3
 Super Mini boards from the same source.
 
@@ -12,12 +12,15 @@ Super Mini boards from the same source.
 | dotmatrix | pulsar | pcb | default |
 | ![classic](docs/faces/classic.png) | ![modern](docs/faces/modern.png) | ![panel](docs/faces/panel.png) | ![panel at night](docs/faces/panel-night.png) |
 | classic | modern | panel | panel, after sunset |
-| ![delorean](docs/faces/delorean.png) | ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) | ![classic at night](docs/faces/classic-night.png) |
-| delorean | casio, after sunset | retro, after sunset | classic, after sunset |
+| ![delorean](docs/faces/delorean.png) | ![california](docs/faces/california.png) | ![outrun](docs/faces/outrun.png) | ![outrun by day](docs/faces/outrun-day.png) |
+| delorean | california | outrun, at night | outrun, by day |
+| ![casio at night](docs/faces/casio-night.png) | ![retro at night](docs/faces/retro-night.png) | ![classic at night](docs/faces/classic-night.png) | ![outrun at dusk](docs/faces/outrun-dusk.png) |
+| casio, after sunset | retro, after sunset | classic, after sunset | outrun, at dusk |
 
 The casio and retro faces switch to an EL-backlight green after sunset, the
-panel face to mint, classic turns its ivory dial over to near-black, and the
-mosaic tiles drift into blues. Sunrise and sunset come from the weather
+panel face to mint, classic turns its ivory dial over to near-black, the
+mosaic tiles drift into blues, and outrun moves through five palettes across
+the day. Sunrise and sunset come from the weather
 feed, so the switch happens at the real time for wherever you've set the
 coordinates.
 
@@ -68,6 +71,9 @@ What's different on it:
   or flick. See [docs/alarms.md](docs/alarms.md).
 - **Auto-rotate.** The IMU keeps the face upright, snapping to the nearest
   quarter turn as you turn the watch.
+- **Brightness.** Swipe up or down on the face; a drag across the glass
+  covers the range. It rides on top of the automatic day/night level, so
+  the panel still dims at dusk after you have set it.
 - **Real-time clock.** The battery-backed RTC holds the time while the power
   is off, so the clock is right the moment it boots instead of waiting for
   the network. NTP still corrects it and writes it back.
