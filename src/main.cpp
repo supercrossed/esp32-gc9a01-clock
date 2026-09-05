@@ -97,7 +97,7 @@ static const FaceVTable *const ROTATION[] = {
 #else
     &FACE_WORD, &FACE_RETRO, &FACE_DOTMATRIX, &FACE_PULSAR, &FACE_PCB,
     &FACE_CASIO, &FACE_MOSAIC, &FACE_DEFAULT, &FACE_CLASSIC, &FACE_MODERN,
-    &FACE_PANEL, &FACE_DELOREAN,
+    &FACE_PANEL, &FACE_DELOREAN, &FACE_CALIFORNIA, &FACE_OUTRUN,
 #endif
 };
 static const int      ROTATION_N = sizeof(ROTATION) / sizeof(ROTATION[0]);
@@ -433,6 +433,103 @@ static void showFace(int idx)
     screenClear(activeFace->background());
 }
 
+#ifdef AMOLED_C6
+// Brightness has two inputs: the automatic day/night level, and whatever the
+// user has swiped to. The manual part is a signed number of stops away from
+// the automatic one, not an absolute level, so the panel still dims at dusk
+// and brightens at dawn after it has been adjusted - an absolute setting
+// would either be undone by the next sunset or would disable the automation
+// entirely.
+//
+// The stops are geometric rather than evenly spaced. Perceived brightness
+// goes roughly as the 2.2nd root of the drive level, so equal steps in the
+// register are lopsided to the eye: barely visible at the bottom of the
+// range and coarse at the top. Each of these is about 1.84x the one below,
+// which is an even move to look at every time.
+//
+// Six of them span black-of-night to full daylight, and a swipe moves as
+// many as its length asks for: a short flick is one stop, a drag across the
+// glass covers the lot. Treating every swipe as a single step meant seven of
+// them just to reach the bottom of the range.
+static const uint8_t BRIGHT_STOPS[] = { 12, 22, 41, 75, 138, 255 };
+static const int     BRIGHT_N       = (int)(sizeof BRIGHT_STOPS / sizeof BRIGHT_STOPS[0]);
+// Where the clock sits when it has never been touched: index into the above.
+static const int     BRIGHT_DAY_I   = 4;    // 138
+static const int     BRIGHT_NIGHT_I = 2;    // 41
+
+static void applyBrightness(int night)
+{
+    int i = (night ? BRIGHT_NIGHT_I : BRIGHT_DAY_I) + alarms.brightAdjust;
+    if (i < 0)             i = 0;
+    if (i > BRIGHT_N - 1)  i = BRIGHT_N - 1;
+    // The bottom stop is dim, not off: a black screen looks like a dead clock
+    // and there would be nothing left to swipe on to bring it back.
+    screenSetBrightness(BRIGHT_STOPS[i]);
+}
+
+// Dragging brightness, tracked while the finger is down rather than acted on
+// when it lifts, so the panel follows the finger instead of jumping at the
+// end. About 300 px of travel covers the whole range.
+//
+// The drag owns the gesture once it starts: the swipe the sampler reports on
+// release is swallowed, or the brightness would move twice for one gesture.
+static const int BRIGHT_DRAG_PX = 300;
+
+static bool  dragActive  = false;    // a vertical drag is in progress
+static bool  dragArmed   = false;    // finger down, direction not yet decided
+static int   dragStartY  = 0, dragStartX = 0;
+static int   dragStartAdj = 0;
+static bool  dragSwallow = false;    // eat the swipe this drag will produce
+
+static void trackBrightness(const struct tm &t)
+{
+    const bool downNow = touch::pressed();
+
+    if (downNow && !dragArmed && !dragActive) {          // finger just landed
+        dragArmed  = true;
+        dragStartX = touch::x();
+        dragStartY = touch::y();
+        dragStartAdj = alarms.brightAdjust;
+        return;
+    }
+    if (!downNow) {                                      // lifted
+        if (dragActive) {
+            dragSwallow = true;                          // its swipe is ours
+            alarmsSave();                                // keep the new level
+        }
+        dragArmed = dragActive = false;
+        return;
+    }
+    if (!dragArmed && !dragActive) return;
+
+    const int dx = touch::x() - dragStartX;
+    const int dy = touch::y() - dragStartY;
+
+    // Decide what this is once it has moved enough to tell. Vertical by the
+    // same 3:2 margin the gestures use, so a horizontal face-change swipe is
+    // never mistaken for a brightness drag.
+    if (dragArmed) {
+        if (abs(dx) < 24 && abs(dy) < 24) return;        // too early to say
+        dragArmed = false;
+        if (abs(dy) * 2 <= abs(dx) * 3) return;          // horizontal: not ours
+        dragActive = true;
+    }
+
+    // Up is brighter, and y decreases upward.
+    int night = isNightNow(t) ? 1 : 0;
+    int base  = night ? BRIGHT_NIGHT_I : BRIGHT_DAY_I;
+    int moved = -dy * (BRIGHT_N - 1) / BRIGHT_DRAG_PX;
+    int adj   = dragStartAdj + moved;
+    if (base + adj < 0)            adj = -base;
+    if (base + adj > BRIGHT_N - 1) adj = BRIGHT_N - 1 - base;
+
+    if (adj != alarms.brightAdjust) {
+        alarms.brightAdjust = (int16_t)adj;
+        applyBrightness(night);                          // no NVS write here
+    }
+}
+#endif
+
 void setup()
 {
     // Serial is UART0 here (ARDUINO_USB_CDC_ON_BOOT=0), not USB-CDC, so
@@ -455,6 +552,7 @@ void setup()
     audio::begin();
     alarmsLoad();
     audio::setVolume(alarms.volume);
+    applyBrightness(0);        // the day/night pass below corrects this shortly
 
     // The battery-backed RTC, before WiFi. If it holds a plausible time the
     // clock starts from it, so the first frame shows the real time instead of
@@ -568,14 +666,26 @@ void loop()
         return;
     }
 
+    // Brightness follows the finger, so it is tracked from the live position
+    // rather than from the gesture the sampler reports on release.
+    trackBrightness(t);
+
     // Touch: swipe through the faces in list order, hold for the alarms.
     // Drained, not sampled: the sampler runs at 20 ms while a smooth frame can
     // hold this loop for ~125 ms, so several gestures may be waiting. Taking
     // one per iteration would pace a quick double-swipe at one face a frame.
     for (touch::Gesture g = touch::poll(); g != touch::NONE; g = touch::poll()) {
+        // A vertical drag has already moved the brightness itself, and the
+        // sampler reports that same finger movement as a swipe when it lifts.
+        // Drop exactly one gesture per drag, whatever it came out as, so the
+        // face cannot also change under a slightly diagonal brightness drag.
+        if (dragSwallow) { dragSwallow = false; continue; }
+
         switch (g) {
             case touch::SWIPE_LEFT:  showFace((faceIdx + 1) % ROTATION_N);              break;
             case touch::SWIPE_RIGHT: showFace((faceIdx + ROTATION_N - 1) % ROTATION_N); break;
+            case touch::SWIPE_UP:
+            case touch::SWIPE_DOWN:  break;      // handled live by trackBrightness
             case touch::LONG_PRESS:  alarm_ui::open();                                  break;
             default: break;
         }
@@ -625,7 +735,14 @@ void loop()
         // Self-lit panels: ease off after dark. No-op where there is a backlight.
         static int lastNight = -1;
         int night = isNightNow(t) ? 1 : 0;
-        if (night != lastNight) { lastNight = night; screenSetBrightness(night ? 110 : 255); }
+        if (night != lastNight) {
+            lastNight = night;
+#ifdef AMOLED_C6
+            applyBrightness(night);        // carries the manual trim with it
+#else
+            screenSetBrightness(night ? 110 : 255);
+#endif
+        }
 
         // Network gone for a while: open the hotspot so new details can be
         // entered, but keep showing the time. Close it again once something

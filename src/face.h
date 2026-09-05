@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 #pragma once
 #include <Arduino.h>
+#include <WiFi.h>
 #include <time.h>
 #include <math.h>
 
@@ -81,6 +82,49 @@ struct FaceVTable {
     bool        dirtyIsComplete;
 };
 
+// Ask for hard-edged text, for the faces imitating a cheap LCD.
+//
+// The AMOLED canvas anti-aliases type by default, which is right nearly
+// everywhere and wrong on a face whose whole point is that it looks like a
+// segment display. The GC9A01 boards draw bitmap fonts unsmoothed already
+// and TFT_eSPI has no such call, so there this compiles to nothing.
+//
+// Written as an overload pair rather than a member so the shared face code
+// can call it on either back end.
+#ifdef AMOLED_C6
+inline void textSmooth(Canvas &g, bool on) { g.setTextSmooth(on); }
+#else
+template <typename GFX>
+inline void textSmooth(GFX &, bool) { }
+#endif
+
+// WiFi signal as a 0..100 level, cached.
+//
+// WiFi.RSSI() is a driver call, not a variable read, and render() runs once
+// per window on the banded display - so a face that asked for it directly
+// was making the call several times a frame for a number that moves slowly
+// and is drawn as a coarse gauge. Sampled once a second here instead.
+//
+// Defined inline in the header so it needs no separate translation unit; the
+// static lives once because of the inline linkage.
+inline int wifiLevel()
+{
+    static uint32_t last = 0;
+    static int      lvl  = 0;
+    uint32_t now = millis();
+    if (last == 0 || now - last > 1000) {
+        last = now;
+        int v = 0;
+        if (WiFi.status() == WL_CONNECTED) {
+            v = 2 * (WiFi.RSSI() + 100);
+            if (v < 0)   v = 0;
+            if (v > 100) v = 100;
+        }
+        lvl = v;
+    }
+    return lvl;
+}
+
 // Seconds hand angle in radians, 0 at 12 o'clock.
 inline float secAngle(const struct tm &t, float sub)
 {
@@ -110,7 +154,7 @@ inline int handBoxes(int cx, int cy, float back, float len, float ang,
 extern const FaceVTable FACE_DEFAULT, FACE_CASIO, FACE_MOSAIC,
                         FACE_RETRO, FACE_DOTMATRIX, FACE_WORD, FACE_PULSAR,
                         FACE_PCB, FACE_CLASSIC, FACE_MODERN, FACE_PANEL,
-                        FACE_DELOREAN;
+                        FACE_DELOREAN, FACE_CALIFORNIA, FACE_OUTRUN;
 
 // The active face, and how long each is shown before rotating.
 extern const FaceVTable *activeFace;
@@ -180,6 +224,22 @@ inline void wxCloud(GFX &g, int x, int y, uint16_t c, int grow = 0)
     g.fillCircle(x + 6, y + 2, 5 + grow, c);
     g.fillCircle(x,     y - 2, 7 + grow, c);
     g.fillRect(x - 6 - grow, y + 2 - grow, 12 + 2 * grow, 5 + 2 * grow, c);
+}
+
+// A short word for a condition, for faces that print it rather than draw it.
+// Kept to eight characters so it fits a small panel at font 2.
+inline const char *wxName(WxIcon ic)
+{
+    switch (ic) {
+        case WX_CLEAR:  return "CLEAR";
+        case WX_PARTLY: return "PARTLY";
+        case WX_CLOUD:  return "CLOUDY";
+        case WX_FOG:    return "FOG";
+        case WX_RAIN:   return "RAIN";
+        case WX_SNOW:   return "SNOW";
+        case WX_STORM:  return "STORM";
+        default:        return "--";
+    }
 }
 
 // Full-colour icon, used by the analog face.

@@ -407,11 +407,7 @@ static void render(GFX &g, const struct tm &t, float subSec)
     float ticks = (t.tm_sec + subSec) / 1.0f;
     fluxCapacitor(g, 30, 30, 62, 62, ticks - (int)ticks);
 
-    int rssi = WiFi.RSSI();
-    int sig  = (WiFi.status() == WL_CONNECTED) ? 2 * (rssi + 100) : 0;
-    if (sig < 0)   sig = 0;
-    if (sig > 100) sig = 100;
-    gauge(g, 104, 32, 92, 58, sig);
+    gauge(g, 104, 32, 92, 58, wifiLevel());
     trefoil(g, 207, 66, 4);
 
     // ---- destination row: HOUR MIN SEC YEAR -------------------------------
