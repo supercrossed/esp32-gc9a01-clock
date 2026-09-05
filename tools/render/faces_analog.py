@@ -397,3 +397,63 @@ def face_outrun(c, hh, mm, mday, wday, temp_f, sig, theme="NIGHT"):
     c.drawString("CLOUDY", 157, 186, 2)
     c.setTextColor(label, panel_c)
     c.drawString("CONDITIONS", 157, 197, 1)
+
+
+# --------------------------------------------------------------------------
+def face_orbit(c, hh, mm, ss, mday, wday, temp_f):
+    K = _consts("orbit")
+    CX = CY = 120
+    BG, TR = K["C_BG"], K["C_TRACK"]
+
+    def arc(r, frac, w, col):
+        if frac <= 0:
+            return
+        frac = min(frac, 1.0)
+        total = frac * 360.0
+        step = max(0.6, min(4.0, math.degrees(2 * math.asin((w * 0.5) / (2.0 * r)))))
+        px, py = CX, CY - r
+        a = step
+        while a <= total + 0.001:
+            aa = math.radians(min(a, total))
+            x, y = CX + r * math.sin(aa), CY - r * math.cos(aa)
+            c.drawWideLine(px, py, x, y, w, col, BG)
+            px, py = x, y
+            a += step
+
+    def head(r, frac, col):
+        a = math.radians(frac * 360.0)
+        x, y = round(CX + r * math.sin(a)), round(CY - r * math.cos(a))
+        c.fillSmoothCircle(x, y, 7, col, BG)
+        c.fillSmoothCircle(x, y, 3, K["C_TEXT"], col)
+
+    c.fillScreen(BG)
+    RS, RM, RH = K["R_SEC"], K["R_MIN"], K["R_HOUR"]
+    for r in (RS, RM, RH):
+        arc(r, 1.0, 8.0, TR)
+
+    sec = ss
+    mins = mm + sec / 60.0
+    hrs = (hh % 12) + mins / 60.0
+    arc(RH, hrs / 12.0, 8.0, K["C_HOUR"])
+    arc(RM, mins / 60.0, 8.0, K["C_MIN"])
+    arc(RS, sec / 60.0, 8.0, K["C_SEC"])
+    head(RH, hrs / 12.0, K["C_HOUR"])
+    head(RM, mins / 60.0, K["C_MIN"])
+    head(RS, sec / 60.0, K["C_SEC"])
+
+    for i in range(12):
+        a = math.radians(i * 30)
+        s, co = math.sin(a), math.cos(a)
+        c.drawWideLine(CX + (RH - 11) * s, CY - (RH - 11) * co,
+                       CX + (RH - 6) * s, CY - (RH - 6) * co,
+                       2.5 if i % 3 == 0 else 1.4, K["C_DIM"], BG)
+
+    c.setTextDatum(MC)
+    c.setTextColor(K["C_TEXT"], BG)
+    c.drawString("%02d:%02d" % (hh, mm), CX, CY - 8, 4)
+    WD = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+    c.setTextColor(K["C_DIM"], BG)
+    c.drawString("%s %d" % (WD[wday % 7], mday), CX, CY + 16, 2)
+    c.setTextColor(K["C_ACCENT"], BG)
+    c.drawString("%d\xb0F" % temp_f, CX, CY + 36, 2)
+    c.fillSmoothCircle(CX, CY + 56, 3, 0x2E68, BG)

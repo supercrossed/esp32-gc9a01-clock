@@ -348,6 +348,7 @@ FACES = {
     "outrun": lambda c: faces_analog.face_outrun(c, HH, MM, MDAY, WDAY, TEMP_F, 78),
     "outrun-day": lambda c: faces_analog.face_outrun(c, HH, MM, MDAY, WDAY, TEMP_F, 78, "DAY"),
     "outrun-dusk": lambda c: faces_analog.face_outrun(c, HH, MM, MDAY, WDAY, TEMP_F, 78, "DUSK"),
+    "orbit": lambda c: faces_analog.face_orbit(c, HH, MM, SS, MDAY, WDAY, TEMP_F),
     "california": lambda c: faces_analog.face_california(c, HH, MM, SS, MDAY, WDAY,
                                                           wx_icon),
     "classic-night": lambda c: faces_analog.face_classic(c, HH, MM, SS, MDAY, "NIGHT"),
