@@ -19,9 +19,16 @@ namespace audio {
 // One step of a melody: a frequency in Hz (0 = silence) and a duration.
 struct Note { uint16_t hz; uint16_t ms; };
 
+// A second voice, played under a melody. Times are absolute milliseconds
+// from the start of the tune rather than durations, because a bass line does
+// not change on the same beats the melody does and stepping both from one
+// clock is simpler than interleaving two note lists.
+struct Voice { uint16_t hz; uint16_t startMs; uint16_t endMs; };
+
 // The alarm sounds the UI offers. Kept small and synthesised rather than
 // sampled: there is no room for audio files beside the faces.
-enum Sound { BEEP = 0, CHIME, RADAR, BELLS, ASCEND, PULSE, MARIMBA, SIREN, SOUND_N };
+enum Sound { BEEP = 0, CHIME, RADAR, BELLS, ASCEND, PULSE, MARIMBA, SIREN,
+             SHANTY, SOUND_N };
 const char *soundName(Sound s);
 
 bool begin();
